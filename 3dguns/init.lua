@@ -82,7 +82,7 @@ minetest.register_globalstep(function(dtime)
                     
                     if def.controls then
                         for i, v in pairs(def.controls) do
-                            guns3d.data[playername].control_data[i] = {false, def.controls[i][4], false}
+                            guns3d.data[playername].control_data[i] = {active = false, timer = def.controls[i][4], conditions_met = false}
                         end
                     end
                     --this function also handles offsets for bones
@@ -100,12 +100,12 @@ minetest.register_globalstep(function(dtime)
                 --======================= action detection and anim handling ========================
                 
                 --======================= DELETE BULLET-HOLES ======================================
-                mesh_file = io.open(minetest.get_modpath("3dguns").."/models/"..def.mesh, "rb")
+                --[[mesh_file = io.open(minetest.get_modpath("3dguns").."/models/"..def.mesh, "rb")
                 if mesh_file ~= nil then
                     print("god is dead")
                     print(dump(modlib.b3d.read(mesh_file)))
                     mesh_file:close()
-                end
+                end]]
                 if guns3d.bullethole_deletion_queue then
                     --probably add a config setting for this, but 80 sounds fair \_(.)_/
                     if #guns3d.bullethole_deletion_queue > 100 then
@@ -160,10 +160,10 @@ minetest.register_globalstep(function(dtime)
                 --minetest.chat_send_all(dump(guns3d.data[playername].control_delay))
                 --this is a headache to understand, i'm not even going to bother explaining. 
                 --you're smart, you figure it out... I just regret not using strings as indexes
-                --I guess I'm just sadistic.
+                --maybe I should redo this section using non-numbered indexes 
                 local excluded_keys = {}
                 if def.controls then
-                    for i2, i in ipairs(def.control_index_list) do 
+                    for _, i in ipairs(def.control_index_list) do 
                         local ctrl_def = def.controls[i]
                         local ctrl_data = guns3d.data[playername].control_data[i]
                         local conditions_met = true
@@ -182,47 +182,47 @@ minetest.register_globalstep(function(dtime)
                         --[2] = how much time is left
                         --[3] = were conditions met last step?
                         --minetest.chat_send_all(dump(conditions_met))
-                        if ctrl_data[1] then 
+                        if ctrl_data.active then 
                             if not conditions_met then
                                 --player isn't pressing button anymore, so reset timer and make conditions false
-                                ctrl_data[1] = false
-                                ctrl_data[2] = ctrl_def[4]
+                                ctrl_data.active = false
+                                ctrl_data.timer = ctrl_def[4]
                             end
                         else
                             if conditions_met then
-                                if ctrl_data[2]-dtime <= 0 then
+                                if ctrl_data.timer-dtime <= 0 then
                                     --set to active
-                                    ctrl_data[1] = true
+                                    ctrl_data.active = true
                                     --call here if its not set to loop, otherwise it will be called downline
                                     if not ctrl_def[2] then
                                         def.control_callbacks[i](true, true, player)
                                         if ctrl_def[3] then
                                             --if repeat is true prevent it from being active
-                                            ctrl_data[1] = false
-                                            ctrl_data[2] = ctrl_def[4]
+                                            ctrl_data.active = false
+                                            ctrl_data.timer = ctrl_def[4]
                                         end
                                     end
                                 end
-                                ctrl_data[2]=ctrl_data[2]-dtime
+                                ctrl_data.timer=ctrl_data.timer-dtime
                             else
-                                ctrl_data[2] = ctrl_def[4]
+                                ctrl_data.timer = ctrl_def[4]
                             end
                         end
                         --minetest.chat_send_all(dump(excluded_keys))
-                        if not conditions_met and ctrl_data[3] then
+                        if not conditions_met and ctrl_data.conditions_met then
                             --call one last time so anims and sounds can be ended.
                             def.control_callbacks[i](false, false, player)
                         end
                         --only play if it's meant to loop
-                        if ctrl_data[1] and ctrl_def[2] then
-                            def.control_callbacks[i](ctrl_data[1], conditions_met, player)
-                        elseif conditions_met and ((not ctrl_def[2] and not ctrl_data[1]) or ctrl_def[2]) then 
+                        if ctrl_data.active and ctrl_def[2] then
+                            def.control_callbacks[i](ctrl_data.active, conditions_met, player)
+                        elseif conditions_met and ((not ctrl_def[2] and not ctrl_data.active) or ctrl_def[2]) then 
                             def.control_callbacks[i](false, true, player)
                         end
                         if conditions_met then
-                            ctrl_data[3] = true
+                            ctrl_data.conditions_met = true
                         else 
-                            ctrl_data[3] = false
+                            ctrl_data.conditions_met = false
                         end
                         --minetest.chat_send_all(dump(input_key))
                     end
@@ -460,7 +460,7 @@ minetest.register_globalstep(function(dtime)
                 local bone_pos, bone_rot = player:get_bone_position("Arm_Right2")
                 local angle = look_x
                 --check if arms exist
-                if arm_obj == nil or arm_obj:get_pos() == nil then
+                --[[if arm_obj == nil or arm_obj:get_pos() == nil then
                     --add arms
                     arm_obj = minetest.add_entity(player:get_pos(),"3dguns:arms")
                     arm_obj:set_attach(player, "", nil, {x=0, y=180, z=0}, false)
@@ -471,14 +471,13 @@ minetest.register_globalstep(function(dtime)
                     --this is to make it look half decent in third person while adsing
                     if guns3d.data[playername].ads then angle = (angle*.78) end
                     arm_obj:set_bone_position("Bone", {x=0,y=guns3d.data[playername].bone_offsets.arm.y+guns3d.data[playername].bone_offsets.root,z=0}, {x=0, y=(sway.y*.9)+wag.y+recoil.y, z=-angle+sway.x+recoil.x})
-                end
+                end]]
                 guns3d.data[playername].last_controls = table.copy(controls)
                 guns3d.data[playername].last_look_vertical = {x=player:get_look_vertical(),y=player:get_look_horizontal(),z=0} 
             end
         end
         --================ change model back ==================
         if not guns3d.data[playername].is_holding then
-            --*MODIFICATIONS NEEDED FOR 3D ARMOR OR CHARACTER CREATOR COMPAT*
             local def = guns3d.guns[guns3d.data[playername].last_held_gun]
             if player_properties.mesh ~= guns3d.data[playername].original_player_model and guns3d.data[playername].original_player_model then
                 player_api.set_model(player, guns3d.data[playername].original_player_model)
