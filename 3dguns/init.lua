@@ -7,11 +7,11 @@ guns3d.magazines = {}
 guns3d.bullethole_deletion_queue = {}
 max_wear = 65534
 local mp = minetest.get_modpath("3dguns")
-dofile(mp .. "/compatibility.lua")
+dofile(mp .. "/player_model.lua")
 dofile(mp .. "/function.lua")
 dofile(mp .. "/register.lua")
 dofile(mp .. "/api.lua")
-dofile(mp .. "/default_guns.lua")
+dofile(mp .. "/guns.lua")
 
 --[[
 ***WARNING***
@@ -56,28 +56,32 @@ minetest.register_globalstep(function(dtime)
                     guns3d.data[playername].fire_mode = 1
                     guns3d.data[playername].control_delay = .4 
                     guns3d.data[playername].fire_queue = 0
-                    guns3d.data[playername].sway_vel = vector.new()
-                    guns3d.data[playername].sway_offset = vector.new()
+                    
+                    --timers and stuff
                     guns3d.data[playername].sway_timer = def.sway_timer
-                    guns3d.data[playername].wag_offset = vector.new()
-                    guns3d.data[playername].visual_offset = {rotation=vector.new(), regular=vector.new()}
+                    guns3d.data[playername].sway_vel = vector.new()
                     guns3d.data[playername].recoil_vel = vector.new()
+
+                    --VISIBLE offsets
+                    guns3d.data[playername].wag_offset = vector.new()
                     guns3d.data[playername].recoil_offset = vector.new()
+                    guns3d.data[playername].sway_offset = vector.new()
+                    --guns3d.data[playername].total_visible_offset
+                    --this is for a later date 
+
+                    --total offset
                     guns3d.data[playername].anim_sounds = {}
                     guns3d.data[playername].rechamber_time = def.chamber_time
                     guns3d.data[playername].last_look_vertical = vector.new(player:get_look_vertical(),player:get_look_horizontal(),0)
                     guns3d.data[playername].reload_timer = def.reload_time 
                     guns3d.data[playername].control_data = {}
-                    guns3d.data[playername].animation_queue = {{},{}}
+                    guns3d.data[playername].animation_queue = {}
                     guns3d.data[playername].animated = {false, false}
                     guns3d.data[playername].last_controls = table.copy(controls)
                     if held_stack:get_meta():get_string("ammo") == "" then
-                        minetest.chat_send_all("ammo table init.")
                         local new_ammo_table = {bullets={}, magazine="", loaded_bullet="", total_bullets=0}
                         held_stack:get_meta():set_string("ammo", minetest.serialize(new_ammo_table))
                         player:set_wielded_item(held_stack)
-                    else 
-                        minetest.chat_send_all(dump(held_stack:get_meta():get_string("ammo")))
                     end
                     
                     if def.controls then
@@ -85,29 +89,20 @@ minetest.register_globalstep(function(dtime)
                             guns3d.data[playername].control_data[i] = {active = false, timer = def.controls[i][4], conditions_met = false}
                         end
                     end
-                    --this function also handles offsets for bones
-                    local new_model = guns3d.get_new_player_model(player)
-                    player_api.set_model(player, new_model)
-                    --this is to make it so switching between guns doesn't perma-lock your model
-                    if not guns3d.data[playername].original_player_model then
-                        guns3d.data[playername].original_player_model = player_properties.mesh
-                    end
-                    player_properties.mesh = new_model
+                    --some model stuff
+                    local model = guns3d.get_guns3d_player_model(player)
+                    player_api.set_model(player, "guns3d_"..model)
+                    player_properties.mesh = "guns3d_"..model
+                    guns3d.data[playername].player_model = model
                 end
+                --declare anything nessecary
+                local model_def = guns3d.model_def[guns3d.data[playername].player_model]
                 local ammo_table = minetest.deserialize(held_stack:get_meta():get_string("ammo"))
-                --minetest.chat_send_all(dump(ammo_table))
                 guns3d.data[playername].last_wield_index = player:get_wield_index()
-                --======================= action detection and anim handling ========================
-                
-                --======================= DELETE BULLET-HOLES ======================================
-                --[[mesh_file = io.open(minetest.get_modpath("3dguns").."/models/"..def.mesh, "rb")
-                if mesh_file ~= nil then
-                    print("god is dead")
-                    print(dump(modlib.b3d.read(mesh_file)))
-                    mesh_file:close()
-                end]]
+                guns3d.data[playername].last_held_gun = gunname
+                --delete bullet holes
                 if guns3d.bullethole_deletion_queue then
-                    --probably add a config setting for this, but 80 sounds fair \_(.)_/
+                    --probably add a config setting for this, but 80 for now
                     if #guns3d.bullethole_deletion_queue > 100 then
                         if guns3d.bullethole_deletion_queue[100] ~= nil then
                             guns3d.bullethole_deletion_queue[100]:remove()
@@ -115,16 +110,9 @@ minetest.register_globalstep(function(dtime)
                         end
                     end
                 end
-                for i, v in pairs(guns3d.data[playername].visual_offset.regular) do 
-                    if math.abs(v) < .00001 then 
-                        guns3d.data[playername].visual_offset.regular[i]=0
-                    end
-                end
-                --guns3d.data[playername].visual_offset.rotation = guns3d.data[playername].visual_offset.rotation*.9
-                guns3d.data[playername].visual_offset.regular = guns3d.data[playername].visual_offset.regular*.9
-                --======================= PLAYER MODEL AND DEFAULTS ================================
-                guns3d.data[playername].last_held_gun = gunname
-                --====================== AIM DOWN SIGHTS ===========================================
+                --====================== controls =================
+                --this is just built in ADS stuff
+                guns3d.arm_dir_rotation(player)
                 player:set_eye_offset({x=def.ads_look_offset*guns3d.data[playername].ads_location, z=0, y=0})
                 if guns3d.data[playername].ads == true then
                     player:set_fov(1/def.ads_zoom_mp, true, .5)
@@ -142,25 +130,30 @@ minetest.register_globalstep(function(dtime)
                         guns3d.data[playername].ads_location = 0
                     end
                 end
-                --====================== controls =================
-                local inv = player:get_inventory()
-                local meta = held_stack:get_meta()
+                --"control delay" which is just used to prevent actions for X amount of time
                 if guns3d.data[playername].control_delay-dtime >= 0 then 
                     guns3d.data[playername].control_delay=guns3d.data[playername].control_delay-dtime
                 else
                     guns3d.data[playername].control_delay=0
                 end
-                local timer = guns3d.data[playername].reload_timer
+                --burst fire go pew pew pew 
                 if guns3d.data[playername].fire_queue > 0 then 
                     if guns3d.data[playername].rechamber_time <= 0 then
                         guns3d.fire(true, true, player, true)
                         guns3d.data[playername].fire_queue = guns3d.data[playername].fire_queue - 1
                     end
                 end
-                --minetest.chat_send_all(dump(guns3d.data[playername].control_delay))
-                --this is a headache to understand, i'm not even going to bother explaining. 
-                --you're smart, you figure it out... I just regret not using strings as indexes
-                --maybe I should redo this section using non-numbered indexes 
+                --rechambering
+                if guns3d.data[playername].rechamber_time > 0 then
+                    guns3d.data[playername].rechamber_time = guns3d.data[playername].rechamber_time - dtime
+                    if guns3d.data[playername].rechamber_time < 0 then
+                        guns3d.data[playername].rechamber_time = 0
+                    end
+                end
+                --this is the main control processing part of the function
+                local inv = player:get_inventory()
+                local meta = held_stack:get_meta()
+                local timer = guns3d.data[playername].reload_timer
                 local excluded_keys = {}
                 if def.controls then
                     for _, i in ipairs(def.control_index_list) do 
@@ -177,11 +170,6 @@ minetest.register_globalstep(function(dtime)
                                 excluded_keys[input_key] = true
                             end
                         end
-                        --CTRL_DATA
-                        --[1] = was it active last step?
-                        --[2] = how much time is left
-                        --[3] = were conditions met last step?
-                        --minetest.chat_send_all(dump(conditions_met))
                         if ctrl_data.active then 
                             if not conditions_met then
                                 --player isn't pressing button anymore, so reset timer and make conditions false
@@ -227,53 +215,39 @@ minetest.register_globalstep(function(dtime)
                         --minetest.chat_send_all(dump(input_key))
                     end
                 end
+                --======================== ANIMATIONS ==========================
                 if guns3d.data[playername].animation_queue then
-                    --[1] is time until end
-                    --[2] is animation frames
-                    --[3] is conditionary function
-                    for i = 1, 2 do
-                        if guns3d.data[playername].animation_queue[i] then
-                            local reference = attached_obj
-                            if i == 2 then reference = arm_obj end
-                            local anim_table = guns3d.data[playername].animation_queue[i][1]
-                            if anim_table ~= nil then
-                                if not guns3d.data[playername].animated[i] then
-                                    guns3d.data[playername].animated[i] = true
-                                    guns3d.data[playername].anim_flip_flop = not guns3d.data[playername].anim_flip_flop
-                                    local extra_frame 
-                                    --stupid problems require stupid solutions -Minetest modding 4269
-                                    if guns3d.data[playername].anim_flip_flop then extra_frame = 1 else extra_frame = 0 end
-                                    local frame_rate = math.abs(anim_table[2].x-anim_table[2].y)/anim_table[1]
-                                    --IMPORTANT! remember to have 1 extra frame after each animation! this is so every other animation
-                                    --a 1 will be added- this is important because it's the only way to repeat an anim.
-                                    reference:set_animation({x=anim_table[2].x, y=anim_table[2].y+extra_frame}, frame_rate, 0, false)
-                                end
-                                if (anim_table[1]-dtime) >= 0 then
-                                    anim_table[1]=anim_table[1]-dtime
-                                    --if the condition function returns false it kills the animation
-                                    if anim_table[3] and anim_table[3](player, anim_table)==false then
-                                        table.remove(guns3d.data[playername].animation_queue[i], 1)
-                                        reference:set_animation({x=0, y=0})
-                                        guns3d.data[playername].animated[i] = false
-                                    end
-                                    --otherwise the animation continues running, "but why?" the animations asks, "why is the only purpose of my existence to suffer, and then burn out like some sort of sadistic battery in which you find amusement from, why must you curse me with existence?"
-                                else
-                                    --otherwise remove the animation
-                                    table.remove(guns3d.data[playername].animation_queue[i], 1)
-                                    reference:set_animation({x=0, y=0})
-                                    guns3d.data[playername].animated[i] = false
-                                end       
-                            end
+                    local reference = attached_obj
+                    local anim_table = guns3d.data[playername].animation_queue[1]
+                    if anim_table ~= nil then
+                        if not guns3d.data[playername].animated then
+                            guns3d.data[playername].animated = true
+                            anim_table.length = anim_table.time
+                            --this is needed because minetest is a fucking dogshit engine.
+                            guns3d.data[playername].anim_flip_flop = not guns3d.data[playername].anim_flip_flop
+                            local extra_frame 
+                            if guns3d.data[playername].anim_flip_flop then extra_frame = 1 else extra_frame = 0 end
+                            local frame_rate = math.abs(anim_table.frames.x-anim_table.frames.y)/anim_table.time
+                            reference:set_animation({x=anim_table.frames.x, y=anim_table.frames.y+extra_frame}, frame_rate, 0, false)
                         end
-                    end 
-                end
-                --====rechambering subsection========
-                if guns3d.data[playername].rechamber_time > 0 then
-                    guns3d.data[playername].rechamber_time = guns3d.data[playername].rechamber_time - dtime
-                    if guns3d.data[playername].rechamber_time < 0 then
-                        guns3d.data[playername].rechamber_time = 0
+                        if (anim_table.time-dtime) >= 0 then
+                            anim_table.time=anim_table.time-dtime
+                            --if the condition function returns false it kills the animation
+                            if anim_table.func and anim_table.func(player, anim_table)==false then
+                                table.remove(guns3d.data[playername].animation_queue, 1)
+                                reference:set_animation({x=0, y=0})
+                                guns3d.data[playername].animated = false
+                            end
+                            --otherwise the animation continues running, "but why?" the animations asks, "why is the only purpose of my existence to suffer, and then burn out like some sort of sadistic battery in which you find amusement from, why must you curse me with existence?"
+                        else
+                            --otherwise remove the animation
+                            table.remove(guns3d.data[playername].animation_queue, 1)
+                            reference:set_animation({x=0, y=0})
+                            guns3d.data[playername].animated = false
+                        end       
                     end
                 end
+                --========================= HUD ===========================
                 local timer = guns3d.data[playername].reload_timer
                 if timer < def.reload_time then
                     if guns3d.hud_id[playername].reload_bar == nil then
@@ -294,12 +268,12 @@ minetest.register_globalstep(function(dtime)
                     player:hud_remove(guns3d.hud_id[playername].reload_bar)
                     guns3d.hud_id[playername].reload_bar = nil
                 end
-                --=================== gun visual entity and attachments ===================
+                --=================== THE GUN =======================
                 if attached_obj == nil or attached_obj:get_pos() == nil then
                     attached_obj = minetest.add_entity(player:get_pos(), gunname.."_visual")
                     local self = attached_obj:get_luaentity()
                     self.parent_player = playername
-                    attached_obj:set_attach(player, "Arm_Right2", vector.multiply({x=def.offset.x, y=def.offset.z, z=-def.offset.y}, 10), def.rot_offset, true)
+                    attached_obj:set_attach(player, "guns3d_hipfire_bone", vector.multiply({x=def.offset.x, y=def.offset.z, z=-def.offset.y}, 10), def.rot_offset, true)
                     if def.reticle ~= nil then
                         local reticle_obj = minetest.add_entity(player:get_pos(), "3dguns:reticle")
                         local modifier = vector.new(); if def.reticle.auto_center == true then modifier = {x=0, y=-def.ads_offset.y*10, z=0} end
@@ -313,7 +287,7 @@ minetest.register_globalstep(function(dtime)
 
                 --local magazine = held_stack:get_meta():get_string("ammo")
                 local bullets = ammo_table.total_bullets
-                player:hud_set_flags({wielditem = false}) 
+                player:hud_set_flags({wielditem = false, crosshair = false}) 
                 if guns3d.hud_id[playername].fore_count == nil then
                     guns3d.hud_id[playername].fore_count = player:hud_add({
                         type = "text",
@@ -360,7 +334,7 @@ minetest.register_globalstep(function(dtime)
                     player:hud_change(guns3d.hud_id[playername].back_count, "text", " / "..tostring(inv_bullets))
                 end
 
-                --================= reeeeecoil ============================
+                --================= Recoil, sway, and the like ============================
                 
                 for axis, velocity in pairs(guns3d.data[playername].recoil_vel) do 
                     local offset = guns3d.data[playername].recoil_offset[axis]
@@ -398,16 +372,13 @@ minetest.register_globalstep(function(dtime)
                 --make looking up reduce recoil... for obvious reasons (this section also prevents recoil from exceeding 90 degrees, also for obvious reasons)
                 local difference_x = (guns3d.data[playername].last_look_vertical.x-player:get_look_vertical())*180/math.pi
                 local difference_y = (guns3d.data[playername].last_look_vertical.y-player:get_look_horizontal())*180/math.pi
-                local vertical_recoil = guns3d.data[playername].recoil_offset.x
                 if difference_x >= 0 then
-                    if vertical_recoil - difference_x >= 0 then
-                        vertical_recoil = vertical_recoil - difference_x / 2
+                    if guns3d.data[playername].recoil_offset.x - difference_x >= 0 then
+                        guns3d.data[playername].recoil_offset.x = guns3d.data[playername].recoil_offset.x - difference_x / 2
                     else
-                        vertical_recoil = 0 
+                        guns3d.data[playername].recoil_offset.x = 0 
                     end
                 end
-                guns3d.data[playername].recoil_offset.x = vertical_recoil 
-                --=================== sway/wag ================================
                 if time == nil then time = dtime else 
                     time=time+dtime*3
                 end
@@ -434,9 +405,14 @@ minetest.register_globalstep(function(dtime)
                     local wag_y = math.sin(time*2)*2*player_vel/4
                     guns3d.data[playername].wag_offset=vector.new(wag_x, wag_y, 0)
                 else
-                    guns3d.data[playername].wag_offset=vector.divide(guns3d.data[playername].wag_offset, 1.1)
-                    if math.abs(guns3d.data[playername].wag_offset.y) < .1 then
-                        guns3d.data[playername].wag_offset = vector.new()
+                    for i, v in pairs(guns3d.data[playername].wag_offset) do 
+                        if v > .08 then
+                            v = v/8
+                        else
+                            v = 0
+                            --print("wag rested")
+                        end
+                        guns3d.data[playername].wag_offset[i] = v
                     end
                 end
                
@@ -448,41 +424,34 @@ minetest.register_globalstep(function(dtime)
                 local sway = guns3d.data[playername].sway_offset
                 local recoil = guns3d.data[playername].recoil_offset
                 local look_x = player:get_look_vertical()*180/math.pi
-                player:set_bone_position("Arm_Right2", guns3d.data[playername].bone_offsets.arm, {x=(look_x+-recoil.x+-sway.x+-wag.x)-90, z=0, y=180+recoil.y+sway.y+wag.y})
-                --(.625 is the root bone's height)
-                local eye_pos = {x=0, y=(player_properties.eye_height*10-guns3d.data[playername].bone_offsets.root), z=0}
-                local eye_rot = vector.add(vector.add(recoil, sway), wag)
-                local vertical = player:get_look_vertical()*-(180/math.pi)
-                eye_rot.x = eye_rot.x + vertical
-                player:set_bone_position("Eye_Bone", eye_pos, eye_rot)
-                player:set_bone_position("Head2", guns3d.data[playername].bone_offsets.head, {x=player:get_look_vertical()*-(180/math.pi),z=0,y=0})
-
-                local bone_pos, bone_rot = player:get_bone_position("Arm_Right2")
-                local angle = look_x
-                --check if arms exist
-                --[[if arm_obj == nil or arm_obj:get_pos() == nil then
-                    --add arms
-                    arm_obj = minetest.add_entity(player:get_pos(),"3dguns:arms")
-                    arm_obj:set_attach(player, "", nil, {x=0, y=180, z=0}, false)
-                else
-                    --disable the arms if adsed because... well i couldn't find a better solution to the arms obscuring the scope
-                    arm_obj:set_attach(player, "", nil, {x=0, y=180, z=0}, false)
-                    --rotate arms 
-                    --this is to make it look half decent in third person while adsing
-                    if guns3d.data[playername].ads then angle = (angle*.78) end
-                    arm_obj:set_bone_position("Bone", {x=0,y=guns3d.data[playername].bone_offsets.arm.y+guns3d.data[playername].bone_offsets.root,z=0}, {x=0, y=(sway.y*.9)+wag.y+recoil.y, z=-angle+sway.x+recoil.x})
-                end]]
+                local total_rotation = wag+sway+recoil
+                --(.625 is the root bone's height) 
+                local eye_pos = vector.new(0, player_properties.eye_height*10, 0)-model_def.offsets.root_bone
+                local look_vertical = player:get_look_vertical()*(180/math.pi)
+                --these have to be flopped 180 for offsets to work, despite the fact that it should actually be backwards... I'm not sure how minetest's rot works anymore
+                player:set_bone_position("guns3d_hipfire_bone", model_def.offsets.arm_right, vector.new(look_vertical, 180, 0)-total_rotation)
+                player:set_bone_position("guns3d_aiming_bone", eye_pos, vector.new(look_vertical, 180, 0)-total_rotation)
+                player:set_bone_position("guns3d_head", model_def.offsets.head, {x=-look_vertical,z=0,y=0})
+                local left_dir, left_rot, left_length = guns3d.arm_dir_rotation(player, true)
+                left_rot.x=-left_rot.x
+                local right_dir, right_rot, right_length = guns3d.arm_dir_rotation(player)
+                right_rot.x=-right_rot.x
+                player:set_bone_position("guns3d_arm_right", model_def.offsets.arm_right, vector.new(90,0,0)-right_rot)
+                player:set_bone_position("guns3d_arm_left", model_def.offsets.arm_left, vector.new(90,0,0)-left_rot)
                 guns3d.data[playername].last_controls = table.copy(controls)
                 guns3d.data[playername].last_look_vertical = {x=player:get_look_vertical(),y=player:get_look_horizontal(),z=0} 
             end
         end
         --================ change model back ==================
         if not guns3d.data[playername].is_holding then
+            --*MODIFICATIONS NEEDED FOR 3D ARMOR OR CHARACTER CREATOR COMPAT*
             local def = guns3d.guns[guns3d.data[playername].last_held_gun]
-            if player_properties.mesh ~= guns3d.data[playername].original_player_model and guns3d.data[playername].original_player_model then
-                player_api.set_model(player, guns3d.data[playername].original_player_model)
-                player_properties.mesh = guns3d.data[playername].original_player_model
-                guns3d.data[playername].original_player_model = nil
+            if player_properties.mesh ~= guns3d.data[playername].player_model and guns3d.data[playername].player_model then
+                if minetest.get_modpath("player_api") then
+                    player_api.set_model(player, guns3d.data[playername].player_model)
+                end
+                player_properties.mesh = guns3d.data[playername].player_model
+                guns3d.data[playername].player_model = nil
                 player:set_properties(player_properties)
             end
             for name, id in pairs(guns3d.hud_id[playername]) do
@@ -490,7 +459,7 @@ minetest.register_globalstep(function(dtime)
                 guns3d.hud_id[playername][name] = nil 
             end
             player:hud_set_flags({wielditem = true}) 
-            --================ disable ADS FOV ====================
+            --reset FOV
             if guns3d.data[playername].ads == true then
                 player:set_fov(0, false, def.ads_time/4)
                 player:set_eye_offset(vector.new())

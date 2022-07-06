@@ -1,29 +1,12 @@
-function guns3d.change_fire_mode(active, controls_active, player)
-    if active then
-        guns3d.data[playername].control_delay = 1
-        def = guns3d.get_gun_def(player, player:get_wielded_item())
-        if guns3d.data[playername].fire_mode+1 > #def.fire_modes then
-            guns3d.data[playername].fire_mode = 1
-        else
-            guns3d.data[playername].fire_mode = guns3d.data[playername].fire_mode + 1
-        end
-        minetest.chat_send_all("firemode switched")
-    end
-end
---NEW AMMO SYSTEM
---deserialize meta:get_string("ammo")
---this contains a table containing all ammo information
---{bullets={bullet_1=29, bullet_2=1}, magazine=magazine, loaded_bullet=bullet_2, total_bullets=30}
---bullet table will be passed to magazine on unload
---magazine table will be used to identify what magazine to unload (ofc)
---loaded_bullet will be future implementations of different bullets
---function 
+
+
+
 function guns3d.fire(active, controls_active, player, from_fire_queue)
-    --"from_fire_queue" is special parameter to bypass sum shit
-    if active then
-        local held_stack = player:get_wielded_item()
+    --do not call if it's semi, it will be called by on_use instead.
+    local held_stack = player:get_wielded_item()
+    local def = guns3d.get_gun_def(player, held_stack)
+    if active and not (def.firetype == "semi_automatic" and not def.__disable_on_use_semi) then
         local collisions = {}
-        local def = guns3d.get_gun_def(player, held_stack)
         local meta = held_stack:get_meta()
         local ammo_table = minetest.deserialize(meta:get_string("ammo"))
         if not guns3d.data[playername].last_controls.LMB and def.firetype == "burst" and not from_fire_queue then
@@ -33,8 +16,11 @@ function guns3d.fire(active, controls_active, player, from_fire_queue)
         if ((def.firetype ~= "burst" and (def.firetype == "automatic" or (def.firetype ~= "automatic" and not guns3d.data[playername].last_controls.LMB))) or from_fire_queue) and ammo_table.total_bullets > 0 then
             if guns3d.data[playername].rechamber_time <= 0 then
                 --this takes ammo, and puts new bullet into next 
-                ammo_table = guns3d.dechamber_bullet(player, ammo_table)
-                local dir, pos = gun_dir_pos(player)
+                if not true then
+                    ammo_table = guns3d.dechamber_bullet(player, ammo_table)
+                end
+                local dir, pos = guns3d.gun_dir_pos(player)
+                pos = pos+player:get_pos()
                 for i = 1, def.pellets do
                     --copy it so it only applies to one pellet
                     local dir = table.copy(dir)
@@ -48,7 +34,7 @@ function guns3d.fire(active, controls_active, player, from_fire_queue)
                     end)
                     spread_rotation.z = 0 
                     --rotate the dir
-                    dir = vector.rotate(dir, spread_rotation)
+                    --dir = vector.rotate(dir, spread_rotation)
                     --start the ray
                     guns3d.ray(player, pos, def, 0, dir, true, 0)
                     --yaw multiplier (so it's not only one side)
@@ -68,6 +54,14 @@ function guns3d.fire(active, controls_active, player, from_fire_queue)
         player:set_wielded_item(held_stack)
     end
 end
+--NEW AMMO SYSTEM
+--deserialize meta:get_string("ammo")
+--this contains a table containing all ammo information
+--{bullets={bullet_1=29, bullet_2=1}, magazine=magazine, loaded_bullet=bullet_2, total_bullets=30}
+--bullet table will be passed to magazine on unload
+--magazine table will be used to identify what magazine to unload (ofc)
+--loaded_bullet will be future implementations of different bullets
+--function 
 function guns3d.reload(active, controls_active, player)
     --this function was moved out of globalstep so may be a bit fucky
     local playername = player:get_player_name()
@@ -86,8 +80,8 @@ function guns3d.reload(active, controls_active, player)
         guns3d.data[playername].anim_sounds.reload = true
         if def.ammo_type == "magazine" then
             animation = {{
-                def.reload_time,
-                table.copy(def.animation_frames.reload)
+                time = def.reload_time,
+                frames = table.copy(def.animation_frames.reload)
             }}
             if ammo_table.magazine ~= "" then
                 local mag_stack = ItemStack(ammo_table.magazine)
@@ -99,13 +93,13 @@ function guns3d.reload(active, controls_active, player)
                 player:set_wielded_item(held_stack)
             end
         end
-        guns3d.start_animation(animation, nil, player)
+        guns3d.start_animation(animation, player)
         guns3d.quick_dual_sfx(player, "reload", def.sounds["reload"].sound, def.sounds["reload"].distance)
     end
     if not controls_active and not active then
         --have extra animation for fractional reloading etc
         guns3d.kill_dual_sfx(player, "reload", .1)
-        guns3d.end_current_animation(true, false, player)
+        guns3d.end_current_animation(player)
         guns3d.data[playername].anim_sounds.reload = nil
     end
     if active then
@@ -123,7 +117,6 @@ function guns3d.reload(active, controls_active, player)
                     if inv:get_stack("main", i):get_name() == ammunition then
                         local temp_stack = inv:get_stack("main", i)
                         local temp_ammo_table = temp_stack:get_meta():get_string("ammo")
-                        minetest.chat_send_all(dump(temp_ammo_table))
                         if temp_ammo_table == "" then 
                             temp_ammo_table = {bullets={}, magazine="", loaded_bullet="", total_bullets=0}
                             temp_stack:get_meta():set_string("ammo", minetest.serialize({bullets={}, magazine=temp_stack:get_name(), loaded_bullet="", total_bullets=0}))
@@ -177,55 +170,113 @@ function guns3d.reload(active, controls_active, player)
         end
     end
 end
-function guns3d.register_gun(name, def)
-    --probably should optimize this with loops at some point
-    if not def.ads_look_offset then def.ads_look_offset = 0 end
-    if not def.pellets then def.pellets = 1 end
-    if not def.ads_rot_offset then def.ads_rot_offset = vector.new() end
-    if not def.sway_timer then def.sway_timer = 0 end
-    if not def.sway_angle then def.sway_angle = 0 end
-    if not def.bullet then def.bullet = {} end
-    if not def.vroffset then def.vroffset = vector.new() end
-    if not def.description then def.description = name end
-    if not def.recoil_vel then def.recoil_vel=vector.new() else def.recoil_vel.z=0 end
-    if not def.recoil_vel_min then def.recoil_vel_min=vector.new() else def.recoil_vel_min.z=0 end
-    if not def.recoil_reduction then def.recoil_reduction=vector.new() else def.recoil_reduction.z=0 end
-    if not def.hip_spread then def.hip_spread = 0 end
-    if not def.ads_spread then def.ads_spread = 0 end
+function guns3d.aim_down_sights(active, controls_active, player)
+    --make option for holding down in future
+    if active then
+        guns3d.data[player:get_player_name()].ads = not guns3d.data[player:get_player_name()].ads
+    end
+end
+function guns3d.change_fire_mode(active, controls_active, player)
+    if active then
+        guns3d.data[playername].control_delay = 1
+        def = guns3d.get_gun_def(player, player:get_wielded_item())
+        if guns3d.data[playername].fire_mode+1 > #def.fire_modes then
+            guns3d.data[playername].fire_mode = 1
+        else
+            guns3d.data[playername].fire_mode = guns3d.data[playername].fire_mode + 1
+        end
+        minetest.chat_send_all("firemode switched")
+    end
+end
 
-    --NOTE: ads_offset is (as you can see) not modified to fix it's actual intended (i.e x needs to be z)
-    --i am not sure why i did this, but i remember having a fairly good reason to
-    if not def.ads_offset then def.ads_offset = vector.new() else
-        def.ads_offset = vector.divide({x=def.ads_offset.x, y=def.ads_offset.y, z=def.ads_offset.z}, 10)
+local default_gun_def = {
+    description = "NO DESCRIPTION", 
+
+    recoil_vel = {x=0, y=0},
+    recoil = {x=0, y=0},
+    recoil_reduction = vector.new(), 
+    recoil_correction = 0, 
+
+    offset = vector.new(), 
+    ads_offset = vector.new(), 
+    bone_offset = vector.new(),
+    flash_offset = vector.new(),
+
+    rotation = vector.new(),
+    axis_rotation = vector.new(),
+    ads_axis_rotation = vector.new(),
+    
+    ads_zoom_mp = 1.4, 
+    ads_look_offset = 1, 
+    sway_angle = 0,
+    sway_timer = 0,
+    flash_scale = .0,
+    range = 0, 
+    pellets = 1,
+    
+    ads_time = 0,
+    ads_spread = 0,
+    hip_spread = 0, 
+
+    firerate = 0, 
+    burst_fire = 0,
+    chamber_time = 0,
+    reload_time = 0, 
+
+    penetration = false, 
+    fire_modes = {"semi-automatic"}, 
+    controls = {
+        reload = {{"zoom"}, false, false, 2},
+        change_fire_mode = {{"zoom", "sneak"}, false, false, 0},
+        fire = {{"LMB"}, false, true, 0},
+        aim = {{"RMB"}, false, false, 0}
+    },
+    control_callbacks = { 
+        reload = guns3d.reload,
+        change_fire_mode = guns3d.change_fire_mode,
+        fire = guns3d.fire,
+        aim = guns3d.aim_down_sights
+    },
+}
+
+function guns3d.register_gun(name, def)
+    print("GUNS3d: beginning definition registration checks for gun"..name)
+    print(". . .")
+    for index, value in pairs(default_gun_def) do
+        local initialized 
+        if not def[index] then
+            def[index] = value
+            initialized = true
+        end
+        if initialized then
+            print("     "..name)
+        end
     end    
-    if not def.offset then def.offset = vector.new() else
-        def.offset = vector.divide({x=def.offset.z, y=def.offset.y, z=def.offset.x}, 10)
-    end      
-    if not def.rot_offset then def.rot_offset = vector.new() else
-        def.rot_offset = {x=def.rot_offset.x, y=def.rot_offset.z, z=def.rot_offset.y}
-    end    
-    if not def.vroffset then def.vroffset = vector.new() else
-        def.vroffset = {x=def.vroffset.x, y=def.vroffset.z, z=def.vroffset.y}
-    end    
-    if not def.animation_frames then def.animation_frames = {} end
-    if not def.arm_animation_frames then def.arm_animation_frames = {} end
-    --register final defs
+    print(". . .")
+    print("registration checks \"".. name.. "\" end")
     def.name = name
     guns3d.guns[name] = def
 
-    --the actual gun tool
     minetest.register_tool(name,{
         description = def.description,
         inventory_image = def.image,
-        on_use = function(itemstack, player, pointed_thing)
+        on_use = function(itemstack, player)
+            local def = guns3d.get_gun_def(player, itemstack)
+            if def.__on_use then
+                itemstack = def.__on_use(player, itemstack)
+                if not def.__disable_on_use_semi then
+                    return itemstack
+                end
+            end
+            if not def.__disable_on_use_semi then
+                itemstack = guns3d.fire(true, true, player)
+                return itemstack
+            end
         end,
         on_drop = function(itemstack, player, pointed_thing)
-            --lol, nerd.
             player:set_wielded_item(itemstack)
         end
     })
-    --make the unattached and attached gun entities
-
     --purely visual representation of the gun's pos
     --on its creation .self will IMMEDIATELY have to have a self.parent_player added, failure will cause disfunction
     minetest.register_entity(name.."_visual", {
@@ -245,31 +296,34 @@ function guns3d.register_gun(name, def)
             local parent = minetest.get_player_by_name(self.parent_player)
             if obj:get_attach() == nil then
                 obj:remove()
+                
                 return
             elseif name == guns3d.data[parent:get_player_name()].held then
                 --obj:set_rotation(guns3d.data[playername].visual_offset.rotation)
                 if guns3d.data[playername].ads_location == 1 or guns3d.data[playername].ads_location == 0 then
                     --attach to the correct bone
                     if guns3d.data[playername].ads == false then
-                        local normal_pos = def.offset+guns3d.data[playername].visual_offset.regular
-                        obj:set_attach(parent, "Arm_Right2", vector.multiply({x=normal_pos.x, y=normal_pos.z, z=-normal_pos.y}, 10), def.rot_offset+guns3d.data[playername].visual_offset.rotation, true)
+                        local normal_pos = def.offset
+                        -- vector.multiply({x=normal_pos.x, y=normal_pos.z, z=-normal_pos.y}, 10)
+                        obj:set_attach(parent, "guns3d_hipfire_bone", normal_pos, def.axis_rotation, true)
                     else
-                        local normal_pos = def.ads_offset+guns3d.data[playername].visual_offset.regular
-                        obj:set_attach(parent, "Eye_Bone", vector.multiply({x=-normal_pos.z, y=normal_pos.y, z=-normal_pos.x}, 10), def.ads_rot_offset+guns3d.data[playername].visual_offset.rotation, true)
+                        local normal_pos = def.ads_offset
+                        obj:set_attach(parent, "guns3d_aiming_bone", normal_pos, def.ads_axis_rotation, true)
                     end
                 else
                     --smoooooth ads
-                    local normal_pos = guns3d.ads_interpolate(parent, guns3d.data[playername].ads_location)+guns3d.data[playername].visual_offset.regular
-                    obj:set_attach(parent, "Eye_Bone", vector.multiply({x=-normal_pos.x, y=normal_pos.y, z=-normal_pos.z}, 1), def.ads_rot_offset, true)
+                    local normal_pos = guns3d.ads_interpolate(parent, guns3d.data[playername].ads_location)
                 end
-            else 
+            else
                 obj:remove()
                 return
             end
+            
+            --print(dump(pos))
         end
     })
 end
---replace in the future
+
 function guns3d.register_magazine(image, description, magazine, ammunitions, size)
     local max_wear = 65535
     guns3d.magazines[magazine] = size
@@ -290,7 +344,6 @@ function guns3d.register_magazine(image, description, magazine, ammunitions, siz
     end)
 
     minetest.register_on_craft(function(itemstack, player, old_craft_grid, craft_inv)
-        minetest.chat_send_all(itemstack:get_name())
         if craft_inv:contains_item("craft", magazine) and craft_inv:contains_item("craftpreview", magazine) then
             local ammo_table = itemstack:get_meta():get_string("ammo")
             local all_items = {}
@@ -376,69 +429,57 @@ function guns3d.register_magazine(image, description, magazine, ammunitions, siz
         end
     end)
 end
-
-
-
-
-
-
-    --[[minetest.register_tool(magazine,{
-        description = description,
-        inventory_image = image,
-        wield_image = image,
-        wear_represents = "ammunition",
-        on_use = function(itemstack, user, pointed_thing)
+--gun def
+function guns3d.get_gun_def(player, itemstack)
+    local def = table.copy(guns3d.guns[itemstack:get_name()])
+    local modifiers = {}
+    for i, v in pairs(def) do
+        if type(def[i]) == "table" then
+            if def[i].z and def[i].y and def[i].x then
+                def[i] = vector.new(def[i].x, def[i].y, def[i].z)
+            end
         end
-    })
-    --future implenetation of multi-ammunition of guns and different ammo stats?
-    minetest.register_craft({
-        type = "shapeless",
-        output = magazine,
-        recipe = {magazine, ammunition.." "..size},
-    })
-    minetest.register_craft({
-        type = "shapeless",
-        output = magazine.." 1 65535",
-        recipe = {magazine}
-    })
+    end
+    for modifier, value in pairs(modifiers) do
+        --this will be used in the future to allow modifications of gun stats
+        --based on player, global, or otherwise.
+    end
+    def.firetype = def.fire_modes[guns3d.data[playername].fire_mode]
+    local value_table = {}
+    local sorting_table = {}
+    --this is some weird sorting to prevent controls from being mis-detected... tl:dr, keep it or replace it, it's needed.
+    if def.controls then
+        for i, v in pairs(def.controls) do
+            sorting_table[i]=#v[1] 
+            table.insert(value_table, #v[1])
+        end 
+        table.sort(value_table, function(a, b) return a > b end)
+        for i2, v2 in pairs(sorting_table) do
+            local filled = false
+            for i, v in pairs(value_table) do 
+                if v == v2 and not filled then
+                    value_table[i]=i2
+                    filled = true
+                end
+            end
+        end
+    end
+    --minetest.chat_send_all(dump(value_table))
+    def.control_index_list = value_table
 
-	minetest.register_on_craft(function(itemstack, player, old_craft_grid, craft_inv)
-		local hasbullet
-		local hasmag
-		local magid
-		local other = false
-		for id, stack in pairs (old_craft_grid) do
-			if stack:get_name() == ammunition then
-				hasbullet = stack:get_count()
-			elseif stack:get_name() == magazine then
-				hasmag = stack:get_wear()
-				magid = id
-			elseif stack:get_name() ~= "" then
-				other = true
-			end
-		end
-		
-		if other then return end
-		
-		if hasmag and not hasbullet then
-			local bullets = math.floor((size+.5) - ((hasmag/max_wear)*size))
-			craft_inv:add_item("craft", {name = ammunition, count = bullets})
-		end
-		
-		if hasbullet and hasmag then
-			craft_inv:add_item("craft", {name = ammunition})
-			local needbullets = math.floor((hasmag/max_wear)*size+.5)
-			if needbullets == 0 then
-				return
-			end
-			if hasbullet >= needbullets then
-				itemstack:set_wear(1)
-				craft_inv:remove_item("craft", {name = ammunition, count = needbullets})
-			else
-				local wear = hasmag-(hasbullet*(max_wear/size))
-				if wear < 1 then wear = 1 end
-				itemstack:set_wear(wear)
-				craft_inv:remove_item("craft", {name = ammunition, count = hasbullet})
-			end
-		end
-	end)]]
+    if def.ammo_type == "magazine" then
+        def.actual_clip_size = guns3d.magazines[itemstack:get_meta():get_string("ammo")]
+    else
+        def.actual_clip_size = def.clip_size
+    end
+    return def 
+end
+
+
+
+
+--==================== DEFAULT CONTROLS ========================
+
+
+
+

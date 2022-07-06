@@ -45,7 +45,6 @@ function guns3d.weighted_randoms(weight_table)
 end
 function guns3d.dechamber_bullet(player, ammo_table)
     ammo_table = table.copy(ammo_table)
-    minetest.chat_send_all(dump(ammo_table.bullets).."  "..dump(ammo_table.total_bullets))
     if ammo_table.bullets[ammo_table.loaded_bullet] ~= nil then
         ammo_table.bullets[ammo_table.loaded_bullet]=ammo_table.bullets[ammo_table.loaded_bullet]-1
     end
@@ -55,7 +54,7 @@ function guns3d.dechamber_bullet(player, ammo_table)
 end
 function guns3d.quick_dual_sfx(player, sound_id, sound_file, distance)
     local playername = player:get_player_name()
-    local dir, pos = gun_dir_pos(player)
+    local dir, pos = guns3d.gun_dir_pos(player)
     if not sfx[playername] then sfx[playername] = {} end
     sfx[playername][sound_id]={
         x = minetest.sound_play(sound_file,{
@@ -79,87 +78,20 @@ function guns3d.kill_dual_sfx(player, sound_id, fade)
     end
     sfx[playername][sound_id] = nil
 end
-function guns3d.end_current_animation(gun, arm, player)
-    local t={guns3d.data[playername].attached_gun, guns3d.data[playername].attached_arms}
+function guns3d.end_current_animation(player)
     local playername = player:get_player_name()
-    for i=1,2 do 
-        if (i==1 and gun) or (i==2 and arm) then
-            t[i]:set_animation({x=0, y=0})
-            guns3d.data[playername].animated[i] = false
-            guns3d.data[playername].animation_queue[i] = nil
-        end
-    end
+    guns3d.data[playername].attached_gun:set_animation({x=0, y=0})
+    guns3d.data[playername].animated = false
+    guns3d.data[playername].animation_queue = {}
 end
-function guns3d.start_animation(gun, arm, player)
+function guns3d.start_animation(animation_table, player)
     local playername = player:get_player_name()
-    local t={gun, arm}
-    for i=1,2 do 
-        if (i==1 and gun) or (i==2 and arm) then
-            guns3d.data[playername].animated[i] = false
-            guns3d.data[playername].animation_queue[i] = t[i]
-        end
-    end
+    guns3d.data[playername].animated = false
+    guns3d.data[playername].animation_queue = animation_table
 end
-
-function guns3d.get_gun_def(player, itemstack)
-    local def = table.copy(guns3d.guns[itemstack:get_name()])
-    local modifiers = {}
-    for modifier, value in pairs(modifiers) do
-        --this will be used in the future to allow modifications of gun stats
-        --based on player, global, or otherwise.
-    end
-    def.firetype = def.fire_modes[guns3d.data[playername].fire_mode]
-    local value_table = {}
-    local sorting_table = {}
-    if def.controls then
-        for i, v in pairs(def.controls) do
-            sorting_table[i]=#v[1] 
-            table.insert(value_table, #v[1])
-        end 
-        table.sort(value_table, function(a, b) return a > b end)
-        for i2, v2 in pairs(sorting_table) do
-            local filled = false
-            for i, v in pairs(value_table) do 
-                if v == v2 and not filled then
-                    value_table[i]=i2
-                    filled = true
-                end
-            end
-        end
-    end
-    --minetest.chat_send_all(dump(value_table))
-    def.control_index_list = value_table
-
-    if def.ammo_type == "magazine" then
-        def.actual_clip_size = guns3d.magazines[itemstack:get_meta():get_string("ammo")]
-    else
-        def.actual_clip_size = def.clip_size
-    end
-    return def 
-end
---still kinda broken... no idea why, really bothers me, but cant do anything
+--this function is totally broken, no idea why, rewrote it like 3 times... guess ill make it 4
 function guns3d.ads_interpolate(player, percentile)
-    local def = guns3d.get_gun_def(player, player:get_wielded_item())
-    def.offset = vector.new(def.offset.x, -def.offset.y, def.offset.z)
-    if def == nil then return minetest.chat_send_all("nil def or no gun") end
-    local playername = player:get_player_name()
-    local arm_pos, _ = player:get_bone_position("Arm_Right2")
-    arm_pos.x = -arm_pos.x
-    arm_pos.y = arm_pos.y - guns3d.data[player:get_player_name()].bone_offsets.root
-    local eye_pos, _ = player:get_bone_position("Eye_bone")
-    eye_pos.x = -eye_pos.x 
-
-    --relative arm pos
-    local recoil = guns3d.data[playername].recoil_offset 
-    local sway = guns3d.data[playername].sway_offset
-    local rotation = vector.multiply({x=-sway.x+-recoil.x, y=-sway.y+-recoil.y, z=0}, math.pi/180)
-    rotation.x = rotation.x + player:get_look_vertical()
-    --this is the position of the gun relative to the player (at hip)
-    local pos1 = vector.rotate(def.offset*10, rotation)+arm_pos
-    pos1 = vector.rotate(pos1-eye_pos, {x=-player:get_look_vertical(),z=0,y=0})
-    pos2 = vector.new(def.ads_offset.z,def.ads_offset.y,def.ads_offset.x)*10
-    local current_pos = (pos2*percentile)+pos1*(1-percentile)
-    return current_pos
+    return vector.new()
 end
 --stolen from elk... (see spriteguns [line here]) what the fuck does this even do, anyway it's used fo
 function math.clamp(val, lower, upper)
@@ -178,55 +110,109 @@ function guns3d.nearest_point_on_line(line_start, line_end, point)
     d = math.clamp(d, 0, length);
     return vector.add(line_start, vector.multiply(line, d))
 end
-function gun_dir_pos(player, offset)
-    if not offset then offset = vector.new() end
+function guns3d.gun_dir_pos(player, added_pos, relative_to_player)
+    added_pos = vector.new(added_pos)
+    local player_properties = player:get_properties()
     local def = guns3d.get_gun_def(player, player:get_wielded_item())
+    local model_def = guns3d.model_def[guns3d.data[playername].player_model]
     local playername = player:get_player_name()
-    local ads = guns3d.data[playername].ads
-    local arm_pos, _ = get_exact_arm_position(player, "Arm_Right2")
+    local bone_location = model_def.offsets.global_hipfire_offset/10
+    local gun_offset = def.offset/10
+    local axis_rotation = def.axis_rotation
     
-    local current_bone_pos 
-    if ads or not (guns3d.data[playername].ads_location == 0 or guns3d.data[playername].ads_location == 1) then 
-        current_bone_pos = vector.add({x=0, y=(player:get_properties().eye_height), z=0}, player:get_pos())
-    else
-        current_bone_pos = arm_pos
-    end
-
-    local current_offset
-    if guns3d.data[playername].ads_location == 0 or guns3d.data[playername].ads_location == 1 then
-        if ads then
-            current_offset = {x=def.ads_offset.z,y=def.ads_offset.y,z=def.ads_offset.x}+offset
+    if guns3d.data[playername].ads then 
+        gun_offset = def.ads_offset/10
+        axis_rotation = def.ads_axis_rotation
+        if guns3d.data[playername].ads_location == 1 or guns3d.data[playername].ads_location == 0 then
+            bone_location = vector.new(0, player_properties.eye_height, 0)
         else
-            current_offset = def.offset+offset
+            --ads interpolate would go here.
+            bone_location = (vector.new(0, player_properties.eye_height, 0))
         end
-    else
-        current_offset = (guns3d.ads_interpolate(player, guns3d.data[playername].ads_location)/10)+offset
     end
 
-    local wag = guns3d.data[playername].wag_offset
-    local recoil = guns3d.data[playername].recoil_offset 
-    local sway = guns3d.data[playername].sway_offset
-    local rotation = vector.dir_to_rotation(player:get_look_dir())
-    rotation = vector.add(vector.multiply({x=sway.x+recoil.x+wag.x, y=-sway.y+-recoil.y+-wag.y, z=0}, math.pi/180), rotation)
+    added_pos = vector.rotate(added_pos, axis_rotation*math.pi/180)
+    gun_offset = gun_offset+added_pos
+    bone_location = vector.new(-bone_location.x, bone_location.y, bone_location.z)
 
-    local new_dir = vector.rotate({x=0,y=0,z=1}, rotation)
-    local new_pos = vector.rotate(current_offset, rotation)
-    new_pos = vector.add(current_bone_pos, new_pos)    
+    local player_horizontal = player:get_look_horizontal()
+    if relative_to_player then player_horizontal = 0 end
+    local player_rotation = vector.new(-player:get_look_vertical(), player_horizontal, 0)
+
+    local wag = guns3d.data[playername].wag_offset*(math.pi/180)
+    local recoil = guns3d.data[playername].recoil_offset*(math.pi/180)
+    local sway = guns3d.data[playername].sway_offset*(math.pi/180)
+
+    --dir needs to be rotated twice seperately to avoid weirdness
+    local dir = vector.new(vector.rotate({x=0, y=0, z=1}, {y=0, x=wag.x+recoil.x+sway.x+player_rotation.x, z=0}))
+    dir = vector.rotate(dir, {y=wag.y+recoil.y+sway.y+player_rotation.y, x=0, z=0})
+
+    local local_pos = vector.rotate(bone_location, {x=0, y=player_horizontal, z=0})+vector.rotate(gun_offset, wag+recoil+sway+player_rotation)
+    local eye_offset = vector.rotate(player:get_eye_offset()/10, {x=0, y=player_horizontal, z=0})
     --[[local hud = player:hud_add({
         hud_elem_type = "image_waypoint",
         text = "muzzle_flash2.png",
-        world_pos =  new_pos,
-        scale = {x=5, y=5},
+        world_pos =  local_pos+player:get_pos(),
+        scale = {x=.6, y=.6},
         alignment = {x=0,y=0},
         offset = {x=0,y=0},
+    })
+    minetest.add_particle({
+        pos = local_pos+player:get_pos(),
+        expirationtime = .05,
+        texture = "muzzle_flash2.png"
     })
     minetest.after(0, function(hud)
         player:hud_remove(hud) 
     end, hud)]]
-    return new_dir, new_pos 
+    --dir, new_pos
+    return dir, local_pos
 end
---also handles (some) sounds
-function guns3d.handle_animation(player, animation)
+function guns3d.arm_dir_rotation(player, left, bone)
+    local playername = player:get_player_name()
+    --serverside anim tracking
+    local rotation = vector.new()
+    local length = vector.new()
+    local dir = vector.new()
+    if guns3d.data[playername].attached_gun then
+        local def = guns3d.get_gun_def(player, player:get_wielded_item())
+        local model_def = guns3d.model_def[guns3d.data[playername].player_model]
+        local anim_table = guns3d.data[playername].animation_queue[1]
+        
+        local objref = guns3d.data[playername].attached_gun
+        local frame = 0
+        
+        if anim_table then
+            frame = anim_table.frames.y-((anim_table.frames.y-anim_table.frames.x)*(anim_table.time/anim_table.length))
+        end
+        --animation compatibility needed in future (though it may be better to just simulate it this way) 
+        local arm_pos = vector.new(model_def.offsets.global_hipfire_offset/10)
+        if left then
+            arm_pos = vector.new(model_def.offsets.global_lefarm_offset/10)
+        end
+        arm_pos.x = -arm_pos.x
+
+        local offset
+        if def.arm_aiming_bones then
+            if left then
+                offset, _ = b3d_tools.get_bone_pos_rot(def.arm_aiming_bones.left, objref, nil, frame)/10
+            else
+                offset, _ = b3d_tools.get_bone_pos_rot(def.arm_aiming_bones.right, objref, nil, frame)/10
+            end
+        end
+
+        local _, gun_pos = guns3d.gun_dir_pos(player, offset, true)
+        dir = vector.direction(arm_pos, gun_pos)
+        rotation = vector.dir_to_rotation(dir)*180/math.pi
+        length = vector.length(arm_pos, gun_pos)
+        print(dump(rotation))
+    end
+    return dir, rotation, length
+end
+--for self explanitory, used to aim the arms
+
+--DEPRICATED
+--[[function guns3d.handle_animation(player, animation)
     local armref = guns3d.data[playername].attached_arms
     local gunref = guns3d.data[playername].attached_gun
     local gun_name = player:get_wielded_item():get_name()
@@ -312,7 +298,7 @@ function guns3d.handle_animation(player, animation)
             flashref:set_attach(gunref, "", def.flash_offset)
         end
     end
-end
+end]]
 
 --skinny support neededfro
 function guns3d.handle_node_hit_fx(dir, node, pointed)
@@ -322,7 +308,7 @@ function guns3d.handle_node_hit_fx(dir, node, pointed)
         pos = pos,
         gain = 1,
         pitch = 1.1,
-        max_hear_distance = 32
+        max_hear_distance = 1
     })
     local max_particle_vel = vector.rotate(reverse_dir*10, {x=.15, y=.15, z=0})
     local min_particle_vel = vector.rotate(reverse_dir*10, {x=-.15, y=-.15, z=0})
@@ -359,12 +345,13 @@ function guns3d.tracer(player, start_pos, end_pos, def)
     obj:set_rotation(vector.dir_to_rotation(dir))
     obj:set_velocity(dir*800)
 end
+--REWRITE NEEDED 
 function guns3d.ray(player, pos, def, dist, dir, new_ray, times_looped)
     --new_ray is basically to keep track of if the function is currently tracking a bullet-
     --which is inside a wall
     --yes, i know. This code is... messy, and hard to understand, and defies logic.
     --however, this was the best way i found
-    if new_ray == true then
+    if new_ray then
         if def.sounds.bullet_whizz ~= nil then
             for _, player2 in pairs(minetest.get_connected_players()) do
                 if player2 ~= player then
@@ -466,22 +453,3 @@ function guns3d.ray(player, pos, def, dist, dir, new_ray, times_looped)
         end
     end
 end
-function get_exact_arm_position(player, bone_name)
-    local bone_pos, bone_rot = player:get_bone_position(bone_name)
-    bone_rot = vector.multiply(bone_rot, math.pi/180)
-    bone_pos = vector.divide({x=-bone_pos.x, y=bone_pos.y+guns3d.data[playername].bone_offsets.root, z=bone_pos.z}, 10)
-    bone_pos = vector.add(vector.rotate(bone_pos, {x=0, y=player:get_look_horizontal(), z=0}), player:get_pos())
-    return bone_pos, bone_rot
-end
-function get_exact_head_position(player, bone_name)
-    --offset is .21
-    --y offset is 12.6
-    local bone_pos, bone_rot = player:get_bone_position(bone_name)
-    bone_rot = vector.multiply(bone_rot, math.pi/180)
-    bone_pos = vector.divide({x=bone_pos.x, y=bone_pos.y+-4.2, z=bone_pos.z}, 10)
-    bone_pos = vector.add(vector.rotate(bone_pos, {x=-player:get_look_vertical(), y=player:get_look_horizontal(), z=0}), player:get_pos())
-    bone_pos = vector.add(bone_pos, {x=0, y=1.36, z=0})
-    return bone_pos, bone_rot
-end
-
-

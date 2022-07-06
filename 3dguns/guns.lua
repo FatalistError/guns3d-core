@@ -2,16 +2,18 @@ guns3d.register_magazine("no2.png", "50R STANAG (5.56x39mm)", "3dguns:extended_s
 guns3d.register_magazine("no.png", "30R STANAG (5.56x39mm)", "3dguns:stanag", {"default:wood", "default:acacia_wood"}, 30)
 guns3d.register_gun("3dguns:m4a1", {
     description = "m4", --FUCK YOU LUA
-    offset = {x=6, z=-1.5, y=2}, --offset of the gun's location relative to arm in hipfire position
+    offset = {x=-2, z=3.5, y=1.8}, --offset of the gun's location relative to arm in hipfire position
+    root_offset = {x=0, y=0, z=0},
+    ads_offset = {x=1, y=0, z=4.5},--offset of the gun while aiming down sights
     yborder = true, --returns gun to rot_offset (removing vroffset and roffset) when looking above or below a certain angle range 
     recoil_vel = {x=.2, y=.004},--how far the gun goes up per second after firing once
     recoil = {x=.7, y=.25},
     recoil_reduction = {x=200, y=100}, --how fast recoil_vel reduces (if you want smoother recoil, set this so that velocity is not at 0 before rechamber)
     recoil_correction = 1, --how many seconds it takes for recoil to stabilize
-    rot_offset = {x=-90, y=90, z=0}, --the rotation offset of the gun that isn't effected by y_border
-    ads_offset = {x=5, y=0, z=1}, --offset of the gun while aiming down sights
-    ads_rot_offset = {x=0, y=90, z=0}, --ads roffset 
-    ads_zoom_mp = 1.4, --isn't actually a multiplier, fov = default_fov / ads_zoom_mp, but functions essentially as a zoom multiplier
+    rotation = {x=0, y=0, z=0}, --the rotation offset of the gun that isn't effected by y_border
+    axis_rotation = {x=0, y=-90, z=0},
+    ads_axis_rotation = {x=0, y=-90, z=0}, --ads roffset 
+    ads_zoom_mp = 1.05, --isn't actually a multiplier, fov = default_fov / ads_zoom_mp, but functions essentially as a zoom multiplier
     ads_look_offset = 1, --horizontal look offset (useful for making the gun look like it's actually being held up to eye)
     mesh = "m4a1.b3d", --main feature
     texture = "cz527.png", --item texture
@@ -19,7 +21,7 @@ guns3d.register_gun("3dguns:m4a1", {
     sway_timer = 3, --how many seconds before the recoil velocity change
     penetration = true, 
     firerate = 850, --rate of fire in rounds per minute (600 would be 10 rounds a second). This same time system is applied to bolt action
-    fire_modes = {"burst", "automatic", "semi-automatic"}, --the firing mode NEED TO IMPLEMENT BURST FIRE
+    fire_modes = {"burst", "automatic", "semi-automatic"},
     burst_fire = 3,
     flash_offset = {x=5.4, y=-.86, z=0},
     flash_scale = .5,
@@ -30,33 +32,20 @@ guns3d.register_gun("3dguns:m4a1", {
     ads_time = .45,
     ads_spread = .02,
     hip_spread = 1, 
+    pellets = 1,
     controls = {
-        --keys, loop, repeat, threshold, override priority
-        --if loop is false, it will still call the function after, just with active parameter false.
-        --repeat basically just resets the timer etc when the function is activated, loop will not work with this. 
-        --(the difference being loop is every step, and repeat at the selected interval)
-        --fire = {{"LMB"}, true, false, 0}
         reload = {{"zoom"}, false, false, 2},
         change_fire_mode = {{"zoom", "sneak"}, false, false, 0},
         fire = {{"LMB"}, false, true, 0},
         aim = {{"RMB"}, false, false, 0}
     },
-    control_callbacks = { 
-        reload = guns3d.reload,
-        change_fire_mode = guns3d.change_fire_mode,
-        fire = guns3d.fire,
-        aim = function(active, controls_active, player)
-            if active then
-                guns3d.data[player:get_player_name()].ads = not guns3d.data[player:get_player_name()].ads
-            end
-        end
-    },
+    arm_aiming_bones = {left="Left_aimpoint", right="Right_aimpoint"},
     chamber_time = 1,
     animation_frames = {
         aim_ads = {x=0, y=0},
         aim = {x=0, y=0},
         reload_ads = {x=1, y=30},
-        reload = {x=1, y=30}, --reloading will auto-adjust fps to match reload length
+        reload = {x=1, y=30},
         fire_ads = {x=31, y=40},
         fire = {x=31, y=40},
         fire_mode_1 = {x=41, y=50},
@@ -102,20 +91,20 @@ guns3d.register_gun("3dguns:awm", {
         auto_center = false --only use for root bone (or centered)
     },
     description = "awm", --FUCK YOU LUA
-    offset = {x=7, z=-1.2, y=1}, --offset of the gun's location relative to arm in hipfire position
+    offset = {x=-1.4, y=1, z=6}, --offset of the gun's location relative to arm in hipfire position
     yborder = true, --returns gun to rot_offset (removing vroffset and roffset) when looking above or below a certain angle range 
     recoil_vel = {x=.2, y=.004},--how far the gun goes up per second after firing once
     recoil = {x=4, y=.25},
     recoil_reduction = {x=200, y=100}, --how fast recoil_vel reduces (if you want smoother recoil, set this so that velocity is not at 0 before rechamber)
     recoil_correction = 1, --how many seconds it takes for recoil to stabilize
-    rot_offset = {x=-90, y=90, z=0}, --the rotation offset of the gun that isn't effected by y_border
-    ads_offset = {x=7, y=-.812176, z=1}, --offset of the gun while aiming down sights
-    ads_rot_offset = {x=0, y=90, z=0}, --ads roffset 
-    ads_zoom_mp = 5, --isn't actually a multiplier, fov = default_fov / ads_zoom_mp, but functions essentially as a zoom multiplier
+    axis_rotation = {x=0, y=-90, z=0},
+    ads_axis_rotation = {x=0, y=-90, z=0},
+    ads_offset = {x=1, y=-.812176, z=7}, --offset of the gun while aiming down sights
+    ads_zoom_mp = 8, --isn't actually a multiplier, fov = default_fov / ads_zoom_mp, but functions essentially as a zoom multiplier
     ads_look_offset = 1, --horizontal look offset (useful for making the gun look like it's actually being held)
     mesh = "awm.b3d", --main feature, ***IMPLEMENTATION NEEDED FOR ANIMATIONS***
     texture = "cz527.png", --item texture
-    sway_angle = .3, --the radius that the new target angle will be in (add minimum later)
+    sway_angle = 0, --the radius that the new target angle will be in (add minimum later)
     sway_timer = 10, --how many seconds before the recoil velocity change
     penetration = true, 
     firerate = 37.5, --rate of fire in rounds per minute (600 would be 10 rounds a second). This same time system is applied to bolt action
@@ -125,9 +114,9 @@ guns3d.register_gun("3dguns:awm", {
     flash_scale = .5,
     range = 200, --range of the ray/bullet. penetrations does NOT account for total range in penetration
     clip_size = 1,
-    ammo_type = "fractional", --uses fractional reloading otherwise
+    ammo_type = "fractional",
     ammunitions = {"default:wood"}, --what magazines it will take (needs fix)
-    reload_time = .1, --time it takes to reload in seconds
+    reload_time = .1, 
     ads_time = .45,
     ads_spread = .00001,
     hip_spread = .015, 
