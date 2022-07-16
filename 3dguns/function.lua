@@ -15,14 +15,48 @@ local max_wear = 65534
         --checks that the types are the same
         if type(tbl2[i]) ~= type(v) then result = false break end
         --checks that if its the table it's the same (bonus points for it calling itself)
-        if type(tbl2[i]) == "table" then 
+        if type(tbl2[i]) == "table" then
             if not guns3d.compare_table(tbl2[i], v) then result = false break end
         else
-            if         
+            if
     end
     return result
 end]]
 local sfx = {}
+function table.compare(tbl1, tbl2)
+    local result = true
+    for i, v in pairs(tbl1) do
+        if type(tbl1[i]) ~= type(tbl2[i]) then
+            result = false
+        elseif (type(tbl1[i])=="table" and not table.compare(tbl1[i], tbl2[i])) then
+            result = false
+        elseif not type(tbl1[i])=="table" and (tbl1[i] ~= tbl2[i]) then
+            result = false
+        end
+    end
+    for i, v in pairs(tbl2) do
+        if type(tbl1[i]) ~= type(tbl2[i]) then
+            result = false
+        elseif (type(tbl1[i])=="table" and not table.compare(tbl1[i], tbl2[i])) then
+            result = false
+        elseif not type(tbl1[i])=="table" and (tbl1[i] ~= tbl2[i]) then
+            result = false
+        end
+    end
+    return result
+end
+
+function guns3d.handle_recoil_effects(player, def)
+    for _, i in pairs({"x", "y"}) do
+        local multiplier = math.random()
+        if multiplier > .5 then multiplier = 1 else multiplier = -1 end
+        local recoil = guns3d.data[playername].recoil_offset
+        local recoil_vel = guns3d.data[playername].recoil_vel
+        recoil_vel.gun_axial[i] = recoil_vel.gun_axial[i] + def.axial_recoil_vel[i] * multiplier
+        if i=="x" then multiplier = 1 end
+        recoil_vel.look_axial[i] = recoil_vel.look_axial[i] + def.recoil_vel[i] * multiplier
+    end
+end
 function guns3d.weighted_randoms(weight_table)
     local weight_table = table.copy(weight_table)
     local new_table = {}
@@ -111,6 +145,10 @@ function guns3d.nearest_point_on_line(line_start, line_end, point)
     return vector.add(line_start, vector.multiply(line, d))
 end
 function guns3d.gun_dir_pos(player, added_pos, relative_to_player)
+    local offset
+    if added_pos then
+        offset = true
+    end
     added_pos = vector.new(added_pos)
     local player_properties = player:get_properties()
     local def = guns3d.get_gun_def(player, player:get_wielded_item())
@@ -118,11 +156,10 @@ function guns3d.gun_dir_pos(player, added_pos, relative_to_player)
     local playername = player:get_player_name()
     local bone_location = model_def.offsets.global_hipfire_offset/10
     local gun_offset = def.offset/10
-    local axis_rotation = def.axis_rotation
-    
-    if guns3d.data[playername].ads then 
-        gun_offset = def.ads_offset/10
+
+    if guns3d.data[playername].ads then
         axis_rotation = def.ads_axis_rotation
+        gun_offset = def.ads_offset/10
         if guns3d.data[playername].ads_location == 1 or guns3d.data[playername].ads_location == 0 then
             bone_location = vector.new(0, player_properties.eye_height, 0)
         else
@@ -130,41 +167,51 @@ function guns3d.gun_dir_pos(player, added_pos, relative_to_player)
             bone_location = (vector.new(0, player_properties.eye_height, 0))
         end
     end
-
-    added_pos = vector.rotate(added_pos, axis_rotation*math.pi/180)
     gun_offset = gun_offset+added_pos
     bone_location = vector.new(-bone_location.x, bone_location.y, bone_location.z)
 
     local player_horizontal = player:get_look_horizontal()
     if relative_to_player then player_horizontal = 0 end
-    local player_rotation = vector.new(-player:get_look_vertical(), player_horizontal, 0)
+    local player_rotation = vector.new(-player:get_look_vertical()+(def.vertical_rotation_offset*math.pi/180), player_horizontal, 0)
+    if math.abs(player_rotation.x*180/math.pi) > 78 then
+        player_rotation.x = player_rotation.x-((player_rotation.x/math.abs(player_rotation.x)*(math.abs(player_rotation.x)-(78*math.pi/180))))
+    end
 
     local wag = guns3d.data[playername].wag_offset*(math.pi/180)
-    local recoil = guns3d.data[playername].recoil_offset*(math.pi/180)
+    local recoil = guns3d.data[playername].recoil_offset.look_axial*(math.pi/180)
+    local axial_recoil = guns3d.data[playername].recoil_offset.gun_axial*(math.pi/180)
     local sway = guns3d.data[playername].sway_offset*(math.pi/180)
 
     --dir needs to be rotated twice seperately to avoid weirdness
-    local dir = vector.new(vector.rotate({x=0, y=0, z=1}, {y=0, x=wag.x+recoil.x+sway.x+player_rotation.x, z=0}))
-    dir = vector.rotate(dir, {y=wag.y+recoil.y+sway.y+player_rotation.y, x=0, z=0})
+    local dir = vector.new(vector.rotate({x=0, y=0, z=1}, {y=0, x=wag.x+recoil.x+axial_recoil.x+sway.x+player_rotation.x, z=0}))
+    dir = vector.rotate(dir, {y=wag.y+recoil.y+axial_recoil.y+sway.y+player_rotation.y, x=0, z=0})
 
     local local_pos = vector.rotate(bone_location, {x=0, y=player_horizontal, z=0})+vector.rotate(gun_offset, wag+recoil+sway+player_rotation)
     local eye_offset = vector.rotate(player:get_eye_offset()/10, {x=0, y=player_horizontal, z=0})
-    --[[local hud = player:hud_add({
-        hud_elem_type = "image_waypoint",
-        text = "muzzle_flash2.png",
-        world_pos =  local_pos+player:get_pos(),
-        scale = {x=.6, y=.6},
-        alignment = {x=0,y=0},
-        offset = {x=0,y=0},
-    })
-    minetest.add_particle({
-        pos = local_pos+player:get_pos(),
+
+    local hud_pos = local_pos+player:get_pos()
+    if relative_to_player then
+        hud_pos = vector.rotate(local_pos, vector.new(0,player:get_look_horizontal(),0) )+player:get_pos()
+    end
+    if not false then
+        local hud = player:hud_add({
+            hud_elem_type = "image_waypoint",
+            text = "muzzle_flash2.png",
+            world_pos =  hud_pos,
+            scale = {x=10, y=10},
+            alignment = {x=0,y=0},
+            offset = {x=0,y=0},
+        })
+        minetest.after(0, function(hud)
+            player:hud_remove(hud)
+        end, hud)
+    end
+    --[[minetest.add_particle({
+        pos = hud_pos,
         expirationtime = .05,
         texture = "muzzle_flash2.png"
-    })
-    minetest.after(0, function(hud)
-        player:hud_remove(hud) 
-    end, hud)]]
+    })]]
+
     --dir, new_pos
     return dir, local_pos
 end
@@ -178,14 +225,17 @@ function guns3d.arm_dir_rotation(player, left, bone)
         local def = guns3d.get_gun_def(player, player:get_wielded_item())
         local model_def = guns3d.model_def[guns3d.data[playername].player_model]
         local anim_table = guns3d.data[playername].animation_queue[1]
-        
+
         local objref = guns3d.data[playername].attached_gun
         local frame = 0
-        
+
+        if not objref:get_pos() then
+            offset = vector.new()
+        end
         if anim_table then
             frame = anim_table.frames.y-((anim_table.frames.y-anim_table.frames.x)*(anim_table.time/anim_table.length))
         end
-        --animation compatibility needed in future (though it may be better to just simulate it this way) 
+        --animation compatibility needed in future (though it may be better to just simulate it this way)
         local arm_pos = vector.new(model_def.offsets.global_hipfire_offset/10)
         if left then
             arm_pos = vector.new(model_def.offsets.global_lefarm_offset/10)
@@ -193,114 +243,23 @@ function guns3d.arm_dir_rotation(player, left, bone)
         arm_pos.x = -arm_pos.x
 
         local offset
-        if def.arm_aiming_bones then
+        if def.arm_aiming_bones and objref:get_pos() then
             if left then
                 offset, _ = b3d_tools.get_bone_pos_rot(def.arm_aiming_bones.left, objref, nil, frame)/10
             else
                 offset, _ = b3d_tools.get_bone_pos_rot(def.arm_aiming_bones.right, objref, nil, frame)/10
             end
         end
-
+        --offset.x = -offset.x
+        --offset = vector.new(0,0,1)
         local _, gun_pos = guns3d.gun_dir_pos(player, offset, true)
         dir = vector.direction(arm_pos, gun_pos)
         rotation = vector.dir_to_rotation(dir)*180/math.pi
         length = vector.length(arm_pos, gun_pos)
-        print(dump(rotation))
     end
     return dir, rotation, length
 end
---for self explanitory, used to aim the arms
 
---DEPRICATED
---[[function guns3d.handle_animation(player, animation)
-    local armref = guns3d.data[playername].attached_arms
-    local gunref = guns3d.data[playername].attached_gun
-    local gun_name = player:get_wielded_item():get_name()
-    --this call is nessecary, because i don't want it to change the muzzle flash entity
-    local def = guns3d.get_gun_def(player, player:get_wielded_item())
-    guns3d.data[playername].current_anim = animation
-    local _, gun_pos = gun_dir_pos(player)
-    if animation == "fire" then
-        if def.sounds["fire"] ~= nil then
-            minetest.sound_play(def.sounds[animation].sound,{
-                pos = gun_pos,
-                max_hear_distance = def.sounds[animation].distance,
-                pitch = 1,
-                gain = 1
-            })
-        end
-        if def.sounds["fire_long"] ~= nil then
-            --need to know what to start it
-            if def.sounds["fire"].distance ~= nil then
-                for _, player2 in pairs(minetest.get_connected_players()) do
-                    if vector.distance(player:get_pos(), gun_pos) >= def.sounds[animation].distance then
-                        minetest.sound_play(def.sounds[animation.."_long"].sound,{
-                            pos = pos,
-                            max_hear_distance = def.sounds[animation.."_long"].distance,
-                            pitch = 1,
-                            gain = 1
-                        })
-                    end
-                end
-            end
-        end
-    end
-    --check if player is aiming
-    if animation == "unloaded" or animation == "resting" then
-        local frames = def.arm_animation_frames[animation]
-        if animation == "resting" then frames = {x=0, y=0} end
-        gunref:set_animation(frames, 1, 0, false)
-        return
-    end
-    if guns3d.data[playername].ads then
-        animation = animation.."_ads"
-    end
-    if gunref ~= nil then
-        if guns3d.data[playername].anim_state == 0 then
-            guns3d.data[playername].anim_state = 1
-        else
-            guns3d.data[playername].anim_state = 0
-        end
-
-        if def.animation_frames[animation] ~= nil then
-            local gun_range = {}
-            local fps = 60
-            gun_range = def.animation_frames[animation]
-            gun_range.y = gun_range.y + guns3d.data[playername].anim_state
-            if animation == "reload" or animation == "reload_ads" then 
-                fps = math.abs((gun_range.y-gun_range.x)/def.reload_time)
-            elseif player:get_wielded_item():get_meta():get_string("ammo") == "" then
-                gun_range = def.animation_frames["unloaded"]
-            end
-            --minetest.chat_send_all(dump(def.animation_frames[animation]))
-            gunref:set_animation(gun_range, fps, 0, false)
-        end
-        if def.arm_animation_frames[animation] then
-            local arm_range = {}
-            local fps = 60
-            arm_range = def.arm_animation_frames[animation]
-            if animation == "reload" or animation == "reload_ads" then 
-                fps = math.abs((arm_range.y-arm_range.x)/def.reload_time)
-            elseif animation == "aim" or animation == "aim_ads" then
-                fps = math.abs((arm_range.y-arm_range.x)/def.ads_time)
-            end
-            armref:set_animation(arm_range, fps, 0, false)
-        end
-        if animation == "fire" or animation == "fire_ads" then
-            if not def.muzzle_flash_entity then def.muzzle_flash_entity = "3dguns:flash_entity" end
-            if not def.muzzle_flash_texture then def.muzzle_flash_texture = "muzzle_flash2.png" end
-            local flashref = minetest.add_entity(player:get_pos(), def.muzzle_flash_entity)
-            local properties = flashref:get_properties()
-            properties.visual_size = {x=.2,y=.2,z=.2}
-            properties.textures = {def.muzzle_flash_texture}
-            if properties.use_texture_alpha then properties.textures[1] = properties.textures[1].."^[opacity:"..tostring(math.random(140, 200)) end
-            flashref:set_properties(properties)
-            flashref:set_attach(gunref, "", def.flash_offset)
-        end
-    end
-end]]
-
---skinny support neededfro
 function guns3d.handle_node_hit_fx(dir, node, pointed)
     local reverse_dir = vector.direction(dir, vector.new())
     --bullet collision effects
@@ -345,110 +304,72 @@ function guns3d.tracer(player, start_pos, end_pos, def)
     obj:set_rotation(vector.dir_to_rotation(dir))
     obj:set_velocity(dir*800)
 end
---REWRITE NEEDED 
-function guns3d.ray(player, pos, def, dist, dir, new_ray, times_looped)
-    --new_ray is basically to keep track of if the function is currently tracking a bullet-
-    --which is inside a wall
-    --yes, i know. This code is... messy, and hard to understand, and defies logic.
-    --however, this was the best way i found
-    if new_ray then
-        if def.sounds.bullet_whizz ~= nil then
-            for _, player2 in pairs(minetest.get_connected_players()) do
-                if player2 ~= player then
-                    local pos1 = vector.add(player2:get_pos(), {x=0, y=player2:get_properties().eye_height, z=0})
-                    local pos2 = guns3d.nearest_point_on_line(pos, vector.multiply(dir, def.range), pos1)
-                    local distance = vector.distance(pos1, pos2)
-                    if distance < def.sounds.bullet_whizz.distance then
-                        minetest.sound_play(def.sounds.bullet_whizz.sound, {
-                            to_player = player2:get_player_name(),
-                            gain = 1,
-                            pitch = 1
-                        })
-                    end
+
+function guns3d.ray(player, pos, dir, not_first_iter, bullet_info, def)
+    if not bullet_info then
+        def = guns3d.get_gun_def(player, player:get_wielded_item())
+        bullet_info = {history={}, range_left=def.bullet.range}
+        --no point in calling this over several iterations.
+    end
+    local ray = minetest.raycast(pos, pos+(bullet_info.range_left*dir), true, true)
+    local last_hit
+    if bullet_info.history[#bullet_info.history] then
+        last_hit = bullet_info.history[#bullet_info.history].pointed
+    end
+    for pointed in ray do
+        if pointed.type == "object" then
+            --for now it just ignores objects, damage has not yet been implemented.
+        end
+        if pointed.type == "node" and (not last_hit or not (vector.length(last_hit.intersection_point, pointed.intersection_point)<.1)) then
+            local node = minetest.get_node(pointed.under)
+            local new_dir = dir
+            for _, i in pairs({"x", "y", "z"}) do
+                local random_num
+                if (math.random() > .5) then random_num = 1 else random_num = -1 end
+                local new_v = vector.new()
+                new_v[i] = math.random(def.bullet.min_pen_deviation, def.bullet.max_pen_deviation)*random_num
+                new_dir = vector.rotate(new_dir, new_v*math.pi/180)
+            end
+            local exit_pointed
+            for pointed2 in minetest.raycast(pointed.intersection_point+(new_dir*1.5), pointed.intersection_point, true, true) do
+                if table.compare(pointed2.under, pointed.under) then
+                    exit_pointed = pointed2
                 end
             end
-        end
-        local ray = minetest.raycast(pos, vector.add(vector.multiply(dir, def.range), pos))
-        local first_node
-        for pointed in ray do
-            if pointed.type == "node" then
-                --this prevents it from colliding with itself and creating a stack overflow
-                if vector.distance(pos, pointed.intersection_point) > .1 then
-                    local next_node = minetest.get_node(pointed.under)
-                    if not first_node then
-                        first_node = pointed.intersection_point
-                        guns3d.tracer(player, pos, first_node, def)
-                        guns3d.handle_node_hit_fx(dir, next_node, pointed)
-                    end
-                    for name, pen_value in pairs(def.bullet.pen_nodes) do
-                        if next_node.name == name then
-                            --[[player:hud_add({
-                                hud_elem_type = "image_waypoint",
-                                text = "entering_wall.png",
-                                world_pos = pointed.intersection_point,
-                                scale = {x=5, y=5},
-                                alignment = {x=0,y=0},
-                                offset = {x=0,y=0},
-                            })]]
-                            guns3d.ray(player, pointed.intersection_point, def, dist, dir, false, times_looped+1)
-                            return
-                        end
-                    end
+            if def.bullet.penetratable_nodes[node.name] then
+                if minetest.get_node(pos).name == "air" then
+                    bullet_info.history[#bullet_info.history+1] = {pointed=pointed, type="entry"}
                 end
-            elseif pointed.type == "object" then
-                --damage the punch the player/object (if pointable)
-            end
-        end
-        if not first_node then 
-            guns3d.tracer(player, pos, vector.add(vector.multiply(dir, def.range), pos), def)
-        end
-    else
-        --not worth doing a for loop when its gonna be the same amount of lines added
-        local mp1 = math.random(0, 20) if mp1 > 10 then mp1 = -1 else mp1 = 1 end
-        local x1 = math.random(def.bullet.max_pen_deviation*10, def.bullet.min_pen_deviation*10)/10*mp1
-        local mp2 = math.random(0, 20) if mp2 > 10 then mp2 = -1 else mp2 = 1 end
-        local y1 = math.random(def.bullet.max_pen_deviation*10, def.bullet.min_pen_deviation*10)/10*mp2
-        local new_rot = {x=x1, y=y1, z=0}
-        local new_dir = vector.rotate(dir, vector.multiply(new_rot, math.pi/180))
-        
-        --check one block ahead to see if the wall ends
-        local target_node = minetest.get_node(vector.add(pos, new_dir))
-        for name, pen_value in pairs(def.bullet.pen_nodes) do
-            --if well doesn't end, then continue calling the function until A: max penetration is hit, or B: wall ends
-            if target_node.name ~= "air" then
-                if target_node.name == name then
-                    guns3d.ray(player, vector.add(pos, new_dir), def, dist+1, new_dir, false, times_looped+1)
-                    --[[player:hud_add({
-                        hud_elem_type = "image_waypoint",
-                        text = "gun_mrkr.png",
-                        world_pos = vector.add(pos, new_dir),
-                        scale = {x=5, y=5},
-                        alignment = {x=0,y=0},
-                        offset = {x=0,y=0},
-                    })]]
+                local next_node = minetest.get_node(pointed.intersection_point+new_dir*.5)
+                if node.name == "air" or node.name == "ignore" then
+                    bullet_info.history[#bullet_info.history+1] = {pointed=exit_pointed, type="exit"}
+                    guns3d.ray(player, exit_pointed.intersection_point, new_dir, true, bullet_info, def)
+                else
+                    bullet_info.history[#bullet_info.history+1] = {pointed=exit_pointed, type="transverse"}
+                    guns3d.ray(player, pointed.intersection_point+new_dir, new_dir, true, bullet_info, def)
                 end
             else
-                --when wall ends, find the exact intersection point, so the distance can be found, and the bullethole can be placed precisely
-                --and of course, start a new ray from that location
-                if target_node.name == "air" then
-                    local ray = minetest.raycast(vector.add(pos, new_dir), pos, false, true)
-                    local pointed = ray:next()
-                    local intersect = pointed.intersection_point
-                    local end_node = minetest.get_node(pointed.under)
-                    if end_node.name == name then
-                        local new_dist = dist + vector.distance(pos, intersect)
-                        guns3d.ray(player, intersect, def, new_dist, dir, true, times_looped+1)
-                        guns3d.handle_node_hit_fx(vector.direction(new_dir, vector.new()), end_node, pointed)
-                        --[[player:hud_add({
-                            hud_elem_type = "image_waypoint",
-                            text = "exiting_wall.png",
-                            world_pos = intersect,
-                            scale = {x=5, y=5},
-                            alignment = {x=0,y=0},
-                            offset = {x=0,y=0},
-                        })]]
-                    end
-                end
+                bullet_info.history[#bullet_info.history+1] = {pointed=pointed, type="end"}
+                --handle hit FX
+            end
+            break
+        end
+    end
+    if not not_first_iter then
+        for i, v in pairs(bullet_info.history) do
+            local pointed = v.pointed
+            if pointed.intersection_point then
+                local hud = player:hud_add({
+                    hud_elem_type = "image_waypoint",
+                    text = "muzzle_flash2.png",
+                    world_pos =  pointed.intersection_point,
+                    scale = {x=.6, y=.6},
+                    alignment = {x=0,y=0},
+                    offset = {x=0,y=0},
+                })
+                minetest.after(20, function(hud)
+                    player:hud_remove(hud)
+                end, hud)
             end
         end
     end

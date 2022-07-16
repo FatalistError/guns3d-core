@@ -4,9 +4,9 @@
 --[[
     NOTE: the locations of bones in models may not translate well
     make sure that the provided location of any given bone's height
-    is the height of the bone with the root subtracted. 
+    is the height of the bone with the root subtracted.
 
-    requirements for a compatible model: 
+    requirements for a compatible model:
         A: Head is renamed to Head2
         B: Right_Arm is named Arm_Right2
 
@@ -24,28 +24,45 @@ end
 local model_dynamic_send_queue = {}
 local temp_models_path = minetest.get_modpath("3dguns").."/temp_models/"
 minetest.rmdir(temp_models_path, true)
-print(minetest.mkdir(temp_models_path))
+minetest.mkdir(temp_models_path)
+
 function guns3d.register_player_model(mesh, def)
-    local file = io.open(modlib.minetest.media.paths[mesh], "rb")
-    local b3d_table = modlib.b3d.read(file)
-    file:close()
-    def.offsets = {}
-    guns3d.player_model(b3d_table.node, nil, def)
-    minetest.safe_file_write(temp_models_path.."guns3d_"..mesh, b3d_table:write_string())
-    model_dynamic_send_queue[#model_dynamic_send_queue+1] = mesh
-    --modlib compatibility
-    modlib.minetest.media.paths["guns3d_"..mesh] = temp_models_path.."guns3d_"..mesh
-    if minetest.get_modpath("player_api") then
-        --copying is important here, dont wanna modify player_api tables.
-        local player_api_def = table.copy(player_api.registered_models[mesh])
-        player_api_def.mesh = "guns3d_"..mesh 
-        player_api_def.animations = player_api_def.animations or def.animations
-        player_api.register_model("guns3d_"..mesh, player_api_def)
+    local modpath = minetest.get_modpath(def.modname)
+    if modpath then
+        local filepath = modlib.minetest.media.paths[mesh]
+        if def.filepath and def.modname then
+            filepath = modpath..def.filepath
+        end
+        local file = io.open(filepath, "rb")
+        local b3d_table = modlib.b3d.read(file)
+        file:close()
+        def.offsets = {}
+        guns3d.player_model(b3d_table.node, nil, def)
+        minetest.safe_file_write(temp_models_path.."guns3d_"..mesh, b3d_table:write_string())
+        model_dynamic_send_queue[#model_dynamic_send_queue+1] = mesh
+        --modlib compatibility
+        modlib.minetest.media.paths["guns3d_"..mesh] = temp_models_path.."guns3d_"..mesh
+        if minetest.get_modpath("player_api") then
+            --copying is important here, dont wanna modify player_api tables.
+            local player_api_def = table.copy(player_api.registered_models[mesh])
+            player_api_def.mesh = "guns3d_"..mesh
+            player_api_def.animations = player_api_def.animations or def.animations
+            player_api.register_model("guns3d_"..mesh, player_api_def)
+        end
+        --finalize guns3d def.
+        guns3d.model_def[mesh] = def
     end
-    --finalize guns3d def.
-    guns3d.model_def[mesh] = def
 end
-minetest.after(0, 
+
+local results = " "
+local file = io.open(minetest.get_modpath("guns3d_tools").."/models/simple_test.b3d", "rb")
+if file ~= nil then
+    results = modlib.b3d.read(file)
+    file:close()
+end
+minetest.safe_file_write(temp_models_path.."guns3d_test_file.txt", dump(results))
+
+minetest.after(0,
     function()
         for i, v in pairs(model_dynamic_send_queue) do
             minetest.dynamic_add_media({
@@ -61,8 +78,8 @@ model_dynamic_send_queue
 function guns3d.player_model(tbl, parent_tbl, def, total_offset)
     --(global) offset, not local
     local position = vector.multiply(vector.new(tbl.position[1], tbl.position[2], tbl.position[3]), vector.new(tbl.scale[1], tbl.scale[2], tbl.scale[3]))
-    if not total_offset then 
-        total_offset = vector.new() 
+    if not total_offset then
+        total_offset = vector.new()
     else
         total_offset = total_offset + position or vector.new()
     end
@@ -116,7 +133,15 @@ function guns3d.get_guns3d_player_model(player)
     end
 end
 guns3d.register_player_model("character.b3d", {
-    root_bone = "Body",  
+    modname = "player_api",
+    root_bone = "Body",
+    arm_left = "Arm_Left",
+    arm_right = "Arm_Right",
+    head = "Head",
+})
+guns3d.register_player_model("3d_armor_character.b3d", {
+    modname = "3d_armor",
+    root_bone = "Body",
     arm_left = "Arm_Left",
     arm_right = "Arm_Right",
     head = "Head",

@@ -6,8 +6,8 @@ player_api.register_model("holding_gun.b3d", {
     visual_size = {x = 1, y = 1},
     animations = {},
     collisionbox = {-0.3, 0.0, -0.3, 0.3, 1.7, 0.3},
-    stepheight = 0.6,     
-    eye_height = 1.47,    
+    stepheight = 0.6,
+    eye_height = 1.47,
 })
 minetest.register_entity("3dguns:reticle", {
     initial_properties = {
@@ -65,7 +65,7 @@ minetest.register_entity("3dguns:arms", {
     initial_properties = {
         visual = "mesh",
         --mesh = "arms.b3d",
-        textures = {"character.png"}, 
+        textures = {"character.png"},
         glow = 0,
         pointable = false,
         static_save = false,
@@ -81,8 +81,8 @@ minetest.register_entity("3dguns:arms", {
         local def = guns3d.guns[guns3d.data[playername].last_held_gun]
         local new_textures = obj:get_attach():get_properties().textures
         local properties = obj:get_properties()
-        
-        if def.arm_mesh and properties.mesh ~= def.arm_mesh then 
+
+        if def.arm_mesh and properties.mesh ~= def.arm_mesh then
             properties.mesh = def.arm_mesh
         else
             properties.mesh = guns3d.data[playername].default_arm_mesh
@@ -106,7 +106,7 @@ minetest.register_entity("3dguns:bullet_hole", {
         textures = {"invisible.png", "invisible.png", "invisible.png", "invisible.png", "bullet_hole_1.png", "invisible.png"}
     },
     on_step = function(self, dtime)
-        if not self.timer then 
+        if not self.timer then
             self.timer = 200
         else
             self.timer = self.timer - dtime
@@ -135,7 +135,7 @@ minetest.register_entity("3dguns:flash_entity", {
         use_texture_alpha = true,
     },
     on_step = function(self, dtime)
-        if not self.timer then 
+        if not self.timer then
             self.timer = .1
         else
             self.timer = self.timer - dtime

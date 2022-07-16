@@ -12,8 +12,13 @@ function b3d_tools.initialize_model(filepath)
 end
 minetest.register_chatcommand("test_reader", {
     func = function()
-        local results = b3d_tools.initialize_model(minetest.get_modpath("3dguns").."/models/m4a1.b3d")
-        print(dump(results))
+        local file = io.open(minetest.get_modpath("3dguns").."/models/testing_model.b3d", "rb")
+        if file ~= nil then
+            local read_file = table.copy(modlib.b3d.read(file))
+            print(dump(read_file))
+            print("function ran")
+            file:close()
+        end
     end
 })
 minetest.register_chatcommand("test_dir", {
@@ -23,9 +28,9 @@ minetest.register_chatcommand("test_dir", {
 })
 minetest.register_chatcommand("test_reformater", {
     func = function()
-        local file = io.open(minetest.get_modpath("guns3d_tools").."/models/simple_test.b3d")
+        local file = io.open(minetest.get_modpath("3dguns").."/models/m4a1.b3d", "rb")
         if file ~= nil then
-            local read_file = modlib.b3d.read(file)
+            local read_file = table.copy(modlib.b3d.read(file))
             print(dump(b3d_tools.reformat(read_file, true)))
             print("function ran")
             file:close()
@@ -34,13 +39,32 @@ minetest.register_chatcommand("test_reformater", {
 })
 minetest.register_chatcommand("test_get_keyframe", {
     func = function()
-        print(dump(b3d_tools.get_keyframe(minetest.get_modpath("guns3d_tools").."/models/simple_test.b3d", "Bone", 2.5)))
+        print(dump(b3d_tools.get_keyframe(minetest.get_modpath("3dguns").."/models/m4a1.b3d", "left_aimpoint", 0)))
     end
 })
 --make sure to table.copy before calling unless you want to break pre-existing table.
---This function produces a neatly formated and easily accessible table from the mess that is the b3d output.    
+--This function produces a neatly formated and easily accessible table from the mess that is the b3d output.
+function b3d_tools.ordered_rotation(rotation, dir)
+    rotation = rotation*math.pi/180
+    local has_dir
+    if not dir then
+        dir = {x=0, y=0, z=1}
+    else
+        has_dir = true
+        --normalize?
+    end
+    local dir = vector.rotate(dir, {x=0, y=0, z=rotation.z})
+    dir = vector.rotate(dir, {x=0, y=rotation.y, z=0})
+    dir = vector.rotate(dir, {x=rotation.x, y=0, z=0})
+    if has_dir then
+        return dir
+    else
+        return vector.dir_to_rotation(dir)*180/math.pi
+    end
+end
 function b3d_tools.reformat(tbl, first_iter, parent)
     local new_tbl = {}
+    --on first iteration it's just the whole file, after that it's a list of children
     if first_iter then
         --additional information needs to be perserved, but this is not important currently
         local new_root_tbl = table.copy(tbl.node)
@@ -52,9 +76,15 @@ function b3d_tools.reformat(tbl, first_iter, parent)
         end
         new_root_tbl.parent = ""
         new_root_tbl.children = nil
-        --animations will always be same across all nodes.
-        if not new_root_tbl.animation then
+        --animations will always be same across all nodes
+        if not new_root_tbl.animation and tbl.node.children[1] then
             new_root_tbl.animation = table.copy(tbl.node.children[1].animation)
+        end
+        if not new_root_tbl.animation then
+            new_root_tbl.animation = {
+                fps = 0,
+                frames = 0
+            }
         end
         if new_root_tbl.mesh then
             new_root_tbl.mesh = nil
@@ -100,10 +130,18 @@ function b3d_tools.find_root_reformatted(table)
         end
     end
 end
-function b3d_tools.get_keyframe(filepath, node, frame)
+function b3d_tools.get_anim_info(filepath)
+    if not b3d_tools.model_initialized(filepath) then
+        b3d_tools.initialize_model(filepath)
+    end
+    local total_frames = model_data_base[filepath][b3d_tools.find_root_reformatted(model_data_base[filepath])].animation.frames
+    local fps = model_data_base[filepath][b3d_tools.find_root_reformatted(model_data_base[filepath])].animation.fps
+    return total_frames, fps
+end
+
+function b3d_tools.get_keyframe(filepath, node, frame, return_in_euler)
     frame = frame + 1
     if not b3d_tools.model_initialized(filepath) then
-        --have fun waiting lol, initialize first loser
         b3d_tools.initialize_model(filepath)
     end
     --find closest keys
@@ -113,71 +151,43 @@ function b3d_tools.get_keyframe(filepath, node, frame)
     for i, keyframe in ipairs(model_data_base[filepath][node].keys) do
         if (keyframe.frame <= frame) and (i > closest_key_before) then
             closest_key_before = i
-        end 
+        end
     end
     local model_frames = model_data_base[filepath][node].keys
     local params = {}
-    for i=1,2 do 
+    for i=1,2 do
+        local additional = 0
+        if i==2 then additional = 1 end
         params[i] = {}
-        for _, vector_type in pairs({"rotation", "position", "scale"}) do
+        for _, vector_type in pairs({"position", "scale", "rotation"}) do
             if i==2 and model_frames[closest_key_before+1]==nil then return table.copy(params[1]) end
-            local additional = 0
-            if i==2 then additional = 1 end
             local indexed_table = model_frames[closest_key_before+additional][vector_type]
-            local x = indexed_table[1]
-            if vector_type == "rotation" then
-                params[i][vector_type]=modlib.quaternion.to_euler_rotation_rad(indexed_table)
-            else
+            if vector_type~="rotation" then
                 params[i][vector_type]=vector.new(indexed_table[1], indexed_table[2], indexed_table[3])
+            else
+                params[i].rotation = model_frames[closest_key_before+additional].rotation
             end
         end
     end
     local interpolation_ratio = (frame-model_frames[closest_key_before].frame)/(model_frames[closest_key_before+1].frame-model_frames[closest_key_before].frame)
+    local rotation = modlib.vector.interpolate(params[1].rotation, params[2].rotation, interpolation_ratio)
+    --[[if return_in_euler then
+        rotation = vector.new(modlib.quaternion.to_euler_rotation_rad(rotation))
+    end]]
     return {
-        rotation = modlib.vector.interpolate(params[1].rotation, params[2].rotation, interpolation_ratio),
-        position = modlib.vector.interpolate(params[1].position, params[2].position, interpolation_ratio),
-        scale = modlib.vector.interpolate(params[1].scale, params[2].scale, interpolation_ratio)
+        scale = vector.new(modlib.vector.interpolate(params[1].scale, params[2].scale, interpolation_ratio)),
+        rotation = rotation,
+        position = vector.new(modlib.vector.interpolate(params[1].position, params[2].position, interpolation_ratio)),
     }
 end
-function b3d_tools.get_bone_pos_rot(bone, objref, filepath, keyframe) 
-    --find the bone's info
-    local this_bone_pos
-    local this_bone_rot
-    if not existing_info then existing_info = {} end
+local function map_to_root(bone, objref, filepath, keyframe, list)
+
+end
+function b3d_tools.get_bone_pos_rot(bone, objref, filepath, keyframe)
     if objref then
         local properties = objref:get_properties()
         local position_valid = false
-        local pos, rot = objref:get_bone_position(bone)
         filepath = modlib.minetest.media.paths[properties.mesh]
-        for _, v in pairs({pos.x, pos.y, pos.z, rot.x, rot.y, rot.z}) do 
-            --make sure its not empty, otherwise there's no way to be sure.
-            if v ~= 0 then position_valid = true print("position valid") end
-        end
-        if position_valid then
-            this_bone_pos = pos   
-            this_bone_rot = rot    
-        end  
     end
-    if not model_data_base[filepath] then
-        b3d_tools.initialize_model(filepath)
-    end
-    if not this_bone_pos then
-        local keyframe_results = b3d_tools.get_keyframe(filepath, bone, keyframe)
-        --print(dump(keyframe_results))
-        if keyframe_results then
-            this_bone_pos = vector.multiply(keyframe_results.position, keyframe_results.scale)
-            this_bone_rot = keyframe_results.rotation
-        else
-            this_bone_pos = vector.new()
-            this_bone_rot = vector.new()
-        end
-    end
-    if model_data_base[filepath][bone].parent and model_data_base[filepath][bone].parent ~= "" then
-        local parent_pos, parent_rot = b3d_tools.get_bone_pos_rot(model_data_base[filepath][bone].parent, objref, filepath, keyframe)
-        print(parent_pos)
-        this_bone_pos = vector.rotate(this_bone_pos, parent_rot) + parent_pos 
-        this_bone_rot = this_bone_rot + parent_rot
-    end
-    this_bone_pos.x = -this_bone_pos.x
-    return vector.new(this_bone_pos), vector.new(this_bone_rot)
+    return vector.new(this_bone_pos), this_bone_rot
 end
