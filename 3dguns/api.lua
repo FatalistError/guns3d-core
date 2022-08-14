@@ -43,7 +43,7 @@ function guns3d.fire(player, def)
             guns3d.handle_recoil_effects(player, def)
             --animataion
             if def.animation_frames.fire then
-                local anim_time = (def.animation_frames.fire.y-def.animation_frames.fire.x)/def.fps
+                local anim_time = (def.animation_frames.fire.y-def.animation_frames.fire.x)/def.fire_anim_fps
                 guns3d.start_animation({{time = anim_time, frames = table.copy(def.animation_frames.fire)}}, player)
             end
             --muzzle flash
@@ -159,9 +159,10 @@ function guns3d.reload(active, controls_active, player)
             if magstack == nil then return end
             meta:set_string("ammo", magstack:get_meta():get_string("ammo"))
             inv:set_stack("main", index, "")
+            guns3d.data[playername].attached_gun:set_animation({x=1, y=10})
             player:set_wielded_item(held_stack)
         end
-        if def.ammo_type == "fractional" then
+        --[[if def.ammo_type == "fractional" then
             if held_stack:get_wear() > 1 then
                 local ammo_list = {}
                 for _, ammunition in pairs(def.ammunitions) do
@@ -190,7 +191,7 @@ function guns3d.reload(active, controls_active, player)
             end
             if def.ammo_type == "non_fractional" then
             end
-        end
+        end]]
     end
 end
 function guns3d.aim_down_sights(active, controls_active, player)
@@ -263,6 +264,7 @@ local default_gun_def = {
         fire = guns3d.pull_trigger,
         aim = guns3d.aim_down_sights
     },
+    fire_anim_fps = 60,
 }
 local default_bullet_def = {
     texture = "cz527.obj",
@@ -273,6 +275,7 @@ local default_bullet_def = {
     destroy_nodes = {},
     penetratable_nodes = {
         ["default:wood"] = 1,
+        ["stairs:slab_wood"] = 1,
         ["default:brick"] = 1,
         ["default:glass"] = 1
     },
@@ -293,12 +296,10 @@ function guns3d.register_gun(name, def)
     print("\n registration checks \"".. name.. "\" end \n")
     if def.screen_offset then
     end
-    local total_frames, fps = b3d_tools.get_anim_info(modlib.minetest.media.paths[def.mesh])
-    def.total_frames = total_frames
-    def.fps = fps
+    --get animation info (this may cause increased startup time/lag)
+
     def.name = name
     guns3d.guns[name] = def
-    --initiailize the reformmated version
     minetest.register_tool(name,{
         description = def.description,
         inventory_image = def.image,
@@ -333,17 +334,17 @@ function guns3d.register_gun(name, def)
                 return
             elseif name == guns3d.data[parent:get_player_name()].held then
                 --obj:set_rotation(guns3d.data[playername].visual_offset.rotation)
-                local axial_recoil = guns3d.data[playername].recoil_offset.gun_axial
+                local axial_rot = guns3d.data[playername].total_rotation.gun_axial
                 --axial_recoil = guns3d.ordered_rotation(axial_recoil)
                 if guns3d.data[playername].ads_location == 1 or guns3d.data[playername].ads_location == 0 then
                     --attach to the correct bone
                     if guns3d.data[playername].ads == false then
                         local normal_pos = def.offset
                         -- vector.multiply({x=normal_pos.x, y=normal_pos.z, z=-normal_pos.y}, 10)
-                        obj:set_attach(parent, "guns3d_hipfire_bone", normal_pos, -axial_recoil, true)
+                        obj:set_attach(parent, "guns3d_hipfire_bone", normal_pos, -axial_rot, true)
                     else
                         local normal_pos = def.ads_offset
-                        obj:set_attach(parent, "guns3d_aiming_bone", normal_pos, -axial_recoil, true)
+                        obj:set_attach(parent, "guns3d_aiming_bone", normal_pos, -axial_rot, true)
                     end
                 else
                     --smoooooth ads

@@ -68,7 +68,7 @@ guns3d.register_gun("3dguns:testing_gun", {
 })
 guns3d.register_gun("3dguns:m4a1", {
     description = "m4",
-    offset = {x=-1.6, z=3.5, y=1.2},
+    offset = {x=-1.6, z=4, y=1.5},
     root_offset = {x=0, y=0, z=0},
     ads_offset = {x=.7, y=0, z=4.67},
     vertical_rotation_offset = -6.5,
@@ -94,7 +94,7 @@ guns3d.register_gun("3dguns:m4a1", {
     range = 200,
     ammo_type = "magazine",
     ammunitions = {"3dguns:stanag", "3dguns:extended_stanag"},
-    reload_time = 1,
+    reload_time = 2,
     ads_time = .45,
     ads_spread = .02,
     hip_spread = 1,
@@ -108,7 +108,7 @@ guns3d.register_gun("3dguns:m4a1", {
     arm_aiming_bones = {left="left_aimpoint", right="right_aimpoint"},
     chamber_time = 1,
     animation_frames = {
-        reload = {x=36, y=74},
+        reload = {x=34, y=75},
         fire = {x=75, y=82},
         fire_mode_1 = {x=82, y=100},
         unloaded = {x=1, y=1},
