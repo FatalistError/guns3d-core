@@ -40,6 +40,108 @@ local function interpolate(x, y, v)
     end
     return returns
 end
+function guns3d.handle_muzzle_fsx(player, def)
+    local dir, offset_pos = guns3d.gun_dir_pos(player, def.flash_offset/10)
+    offset_pos=offset_pos+player:get_pos()
+    local min = vector.rotate(vector.new(-2, -2, -.3), vector.dir_to_rotation(dir))
+    local max = vector.rotate(vector.new(2, 2, .3), vector.dir_to_rotation(dir))
+    minetest.add_particlespawner({
+        exptime = .09,
+        time = .06,
+        amount = 15,
+        attached = guns3d.data[playername].attached_gun,
+        pos = def.flash_offset/10,
+        radius = .04,
+        glow = 3.5,
+        vel = {min=vector.new(-2, -2, -.3)+player:get_velocity(), max=vector.new(2, 2, .3)+player:get_velocity(), bias=0},
+        texpool = {
+            {
+                name = "smoke2.png",
+                alpha_tween = {.25, 0},
+                scale = 2,
+                blend = "alpha",
+                animation = {
+                    type = "vertical_frames",
+                    aspect_w = 16,
+                    aspect_h = 16,
+                    length = .1,
+                },
+            },
+            {
+                name = "smoke2.png",
+                alpha_tween = {.25, 0},
+                scale = .8,
+                blend = "alpha",
+                animation = {
+                    type = "vertical_frames",
+                    aspect_w = 16,
+                    aspect_h = 16,
+                    length = .1,
+                },
+            },
+            {
+                name = "smoke2.png^[multiply:#dedede",
+                alpha_tween = {.25, 0},
+                scale = 2,
+                blend = "alpha",
+                animation = {
+                    type = "vertical_frames",
+                    aspect_w = 16,
+                    aspect_h = 16,
+                    length = .1,
+                },
+            },
+            {
+                name = "smoke2.png^[multiply:#b0b0b0",
+                alpha_tween = {.2, 0},
+                scale = 2,
+                blend = "alpha",
+                animation = {
+                    type = "vertical_frames",
+                    aspect_w = 16,
+                    aspect_h = 16,
+                    length = .25,
+                },
+            }
+      }
+    })
+    minetest.add_particlespawner({
+        exptime = .3,
+        time = 1.8,
+        amount = 20,
+        pos = def.flash_offset/10,
+        glow = 3.5,
+        vel = {min=vector.new(-.28,.4,.2), max=vector.new(.28,.6,1), bias=0},
+        attached = guns3d.data[playername].attached_gun,
+        texpool = {
+            {
+                name = "smoke2.png",
+                alpha_tween = {.08, 0},
+                scale = 1.4,
+                blend = "alpha",
+                animation = {
+                    type = "vertical_frames",
+                    aspect_w = 16,
+                    aspect_h = 16,
+                    length = .35,
+                },
+            },
+            {
+                name = "smoke2.png^[multiply:#b0b0b0",
+                alpha_tween = {.08, 0},
+                scale = 1.4,
+                blend = "alpha",
+                animation = {
+                    type = "vertical_frames",
+                    aspect_w = 16,
+                    aspect_h = 16,
+                    length = .35,
+                },
+            }
+    }
+    })
+end
+--rename to "handle_recoil_fsx" for consistency
 function guns3d.handle_recoil_effects(player, def)
     for _, i in pairs({"x", "y"}) do
         local multiplier = math.random()

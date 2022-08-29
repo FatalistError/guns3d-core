@@ -141,7 +141,7 @@ minetest.register_entity("3dguns:flash_entity", {
             self.timer = self.timer - dtime
         end
         local properties = self.object:get_properties()
-        if self.timer > .05 then
+        if self.timer > .1 then
             properties.visual_size = vector.multiply(properties.visual_size, 1.2)
         else
             properties.visual_size = vector.multiply(properties.visual_size, .8)

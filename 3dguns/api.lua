@@ -8,8 +8,6 @@ function guns3d.fire(player, def)
     local ammo_table = minetest.deserialize(meta:get_string("ammo"))
     if ammo_table.total_bullets > 0 then
         if guns3d.data[playername].rechamber_time <= 0 then
-            --this takes ammo, and puts new bullet into next
-
             if not minetest.check_player_privs(player, {creative=true}) then
                 ammo_table = guns3d.dechamber_bullet(player, ammo_table)
             end
@@ -31,29 +29,15 @@ function guns3d.fire(player, def)
                 dir = vector.rotate(dir, spread_rotation)
                 guns3d.ray(player, pos, dir)
             end
-            --rechambering
-            if def.rechamber_time then
-                --guns3d.data[playername].rechamber_time =
-            else
-                guns3d.data[playername].rechamber_time = 60/def.firerate
-                --this needs to be mentioned in the API
-                guns3d.data[playername].time_since_last_fire = 0
-            end
-            --recoil (needs redo)
+            --order matters
+            guns3d.data[playername].rechamber_time = 60/def.firerate
             guns3d.handle_recoil_effects(player, def)
-            --animataion
+            guns3d.handle_muzzle_fsx(player, def)
+            guns3d.data[playername].time_since_last_fire = 0
             if def.animation_frames.fire then
                 local anim_time = (def.animation_frames.fire.y-def.animation_frames.fire.x)/def.fire_anim_fps
                 guns3d.start_animation({{time = anim_time, frames = table.copy(def.animation_frames.fire)}}, player)
             end
-            --muzzle flash
-            local flashref = minetest.add_entity(player:get_pos(), def.flash_entity)
-            local properties = flashref:get_properties()
-            properties.visual_size = {x=.2,y=.2,z=.2}
-            properties.textures = {def.flash_texture}
-            if properties.use_texture_alpha then properties.textures[1] = properties.textures[1].."^[opacity:"..tostring(math.random(140, 200)) end
-            flashref:set_properties(properties)
-            flashref:set_attach(guns3d.data[playername].attached_gun, "", vector.rotate(def.flash_offset, def.axis_rotation*math.pi/180))
         end
     elseif ammo_table.total_bullets <= 0 then
         guns3d.data[playername].fire_queue = 0
@@ -221,6 +205,7 @@ local default_gun_def = {
     recoil = {x=0, y=0},
     recoil_correction = 1,
     recoil_reduction = 1,
+    max_recoil_correction = 100,
 
     offset = vector.new(),
     ads_offset = vector.new(),
@@ -334,7 +319,11 @@ function guns3d.register_gun(name, def)
                 return
             elseif name == guns3d.data[parent:get_player_name()].held then
                 --obj:set_rotation(guns3d.data[playername].visual_offset.rotation)
-                local axial_rot = guns3d.data[playername].total_rotation.gun_axial
+                local ads_modifier = vector.new()
+                if not guns3d.data[playername].ads then
+                    ads_modifier = vector.new(guns3d.data[playername].vertical_aim*.25,0,0)
+                end
+                local axial_rot = guns3d.data[playername].total_rotation.gun_axial+ads_modifier
                 --axial_recoil = guns3d.ordered_rotation(axial_recoil)
                 if guns3d.data[playername].ads_location == 1 or guns3d.data[playername].ads_location == 0 then
                     --attach to the correct bone

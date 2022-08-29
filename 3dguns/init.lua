@@ -6,6 +6,7 @@ guns3d.hud_id = {}
 guns3d.data = {}
 guns3d.magazines = {}
 guns3d.bullethole_deletion_queue = {}
+guns3d.last_dtime = 0
 max_wear = 65534
 local mp = minetest.get_modpath("3dguns")
 dofile(mp .. "/player_model.lua")
@@ -27,6 +28,7 @@ read at your own risk.
 --bullet.pen_deviation = number, in degrees to randomly rotate after penetration
 ----=============== GLOBALSTEP ======================
 minetest.register_globalstep(function(dtime)
+    guns3d.last_dtime = dtime
     --minetest.chat_send_all(dump(dtime))
     --[[local t2=math.random()*1000*150
     local t = minetest.get_us_time()+t2
@@ -66,20 +68,20 @@ minetest.register_globalstep(function(dtime)
                     guns3d.data[playername].sway_timer = def.sway_timer
                     guns3d.data[playername].sway_vel = vector.new()
 
-                    --VISIBLE offsets
                     guns3d.data[playername].wag_offset = {gun_axial=vector.new(), look_axial=vector.new()}
                     guns3d.data[playername].recoil_offset = {gun_axial=vector.new(), look_axial=vector.new()}
                     guns3d.data[playername].recoil_vel = {gun_axial=vector.new(), look_axial=vector.new()}
                     guns3d.data[playername].sway_offset = vector.new()
+                    guns3d.data[playername].vertical_aim = player:get_look_vertical()
                     guns3d.data[playername].total_rotation = {gun_axial=vector.new(), look_axial=vector.new()}
-                    --this is for a later date
+
                     guns3d.data[playername].anim_sounds = {}
                     guns3d.data[playername].rechamber_time = def.chamber_time
                     guns3d.data[playername].last_look_vertical = vector.new(player:get_look_vertical(),player:get_look_horizontal(),0)
                     guns3d.data[playername].reload_timer = def.reload_time
                     guns3d.data[playername].control_data = {}
                     guns3d.data[playername].animation_queue = {}
-                    guns3d.data[playername].animated = {false, false}
+                    guns3d.data[playername].animated = false
                     guns3d.data[playername].last_controls = table.copy(controls)
                     for i, v in pairs(def.controls) do
                         guns3d.data[playername].control_data[i] = {active = false, timer = def.controls[i][4], conditions_met = false}
@@ -92,7 +94,7 @@ minetest.register_globalstep(function(dtime)
                     if (ammo_table.magazine ~= "" or def.ammo_type ~= "magazine") and ammo_table.total_bullets > 0 then
                         local animation = {{
                             time = def.chamber_time,
-                            frames = table.copy(def.animation_frames.reload)
+                            frames = table.copy(def.animation_frames.rechamber)
                         }}
                         guns3d.start_animation(animation, player)
                     end
@@ -345,7 +347,6 @@ minetest.register_globalstep(function(dtime)
                     attached_obj:set_animation({x=0, y=0})
                 end
                 --================= Recoil, sway, and the like ============================
-                print(dump(guns3d.data[playername].time_since_last_fire))
                 for _, axis in pairs({"look_axial", "gun_axial"}) do
                     for _, i in pairs({"x", "y"}) do
                         local recoil = guns3d.data[playername].recoil_offset[axis][i]
@@ -360,10 +361,16 @@ minetest.register_globalstep(function(dtime)
                         end
                         --correct recoil
                         if math.abs(recoil) > 0.00001 then
-                            local correction_factor = math.sqrt(guns3d.data[playername].time_since_last_fire)*def.recoil_correction[axis]
-                            recoil=recoil-(recoil*correction_factor)*dtime
-                            if i=="x" then
-                                --print(correction_factor)
+                            local correction_multiplier = guns3d.data[playername].time_since_last_fire*def.recoil_correction[axis]
+                            local correction_factor = recoil*correction_multiplier
+                            if correction_factor > def.max_recoil_correction then
+                                correction_factor = def.max_recoil_correction*(math.abs(def.max_recoil_correction)/def.max_recoil_correction)
+                            end
+                            --have to use "control int" bc negative squareroots cause NAN
+                            local control_int = (recoil/math.abs(recoil))
+                            recoil=recoil-correction_factor*dtime
+                            if i=="x" and axis=="look_axial" then
+                                print(dump(recoil*correction_multiplier))
                             end
                         end
                         guns3d.data[playername].recoil_offset[axis][i] = recoil
@@ -412,24 +419,31 @@ minetest.register_globalstep(function(dtime)
                         end
                     end
                 end
-                --=================== bones and arms ===================
-                --rattle me booones
-                --bone stuff
+                --=================== aim interpolation/delay ==========
                 local wag = guns3d.data[playername].wag_offset
                 local sway = guns3d.data[playername].sway_offset
                 local recoil = guns3d.data[playername].recoil_offset
-                local total_rotation = recoil.look_axial+wag.look_axial+sway
-                guns3d.data[playername].total_rotation = {gun_axial=(wag.gun_axial+recoil.gun_axial), look_axial=total_rotation}
-                --(.625 is the root bone's height)
-                local eye_pos = vector.new(0, player_properties.eye_height*10, 0)
-                local look_vertical = (player:get_look_vertical()*180/math.pi)-def.vertical_rotation_offset
-                if math.abs(look_vertical) > 78 then
-                    look_vertical = look_vertical-((look_vertical/math.abs(look_vertical)*(math.abs(look_vertical)-78)))
+                local look_rotation = vector.new(-player:get_look_vertical(), -player:get_look_horizontal(), 0)*180/math.pi
+                local constant = 4.5
+                guns3d.data[playername].vertical_aim = ((guns3d.data[playername].vertical_aim-look_rotation.x)/(1+((constant*10)*dtime)))+look_rotation.x
+                if math.abs(guns3d.data[playername].vertical_aim) > 76 then
+                    local control_int = (guns3d.data[playername].vertical_aim/math.abs(guns3d.data[playername].vertical_aim))
+                    guns3d.data[playername].vertical_aim = 76*control_int
                 end
+                local vertical_aim = guns3d.data[playername].vertical_aim
+                guns3d.data[playername].total_rotation = {gun_axial=(wag.gun_axial+recoil.gun_axial), look_axial=sway+wag.look_axial+recoil.look_axial}
+                --=================== bones and arms ===================
+                --rattle me booones
+                --bone stuff
+
+                --sway will eventually have to be look_axial
+                local total_rotation = guns3d.data[playername].total_rotation.look_axial
+                local eye_pos = vector.new(0, player_properties.eye_height*10, 0)
+
                 --these have to be flopped 180 for offsets to work, despite the fact that it should actually be backwards... I'm not sure how minetest's rot works anymore
-                player:set_bone_position("guns3d_hipfire_bone", model_def.offsets.arm_right, vector.new(look_vertical, 180, 0)-total_rotation)
-                player:set_bone_position("guns3d_aiming_bone", eye_pos, vector.new(-look_vertical, 180, 0)+vector.new(total_rotation.x, -total_rotation.y, total_rotation.z))
-                player:set_bone_position("guns3d_head", model_def.offsets.head, {x=-look_vertical,z=0,y=0})
+                player:set_bone_position("guns3d_hipfire_bone", model_def.offsets.arm_right, vector.new(-(total_rotation.x+(vertical_aim*.75)), 180-total_rotation.y, 0))
+                player:set_bone_position("guns3d_aiming_bone", eye_pos, vector.new(vertical_aim+total_rotation.x, 180-total_rotation.y, 0))
+                player:set_bone_position("guns3d_head", model_def.offsets.head, {x=vertical_aim,z=0,y=0})
                 --aim arms at user defined bones.
                 local left_dir, left_rot, left_length = guns3d.arm_dir_rotation(player, true)
                 left_rot.x=-left_rot.x
@@ -450,7 +464,6 @@ minetest.register_globalstep(function(dtime)
                 if minetest.get_modpath("player_api") then
                     player_api.set_model(player, guns3d.data[playername].player_model)
                 end
-                print(dump(guns3d.data[playername].player_model))
                 player_properties.mesh = guns3d.data[playername].player_model
                 guns3d.data[playername].player_model = nil
                 player:set_properties(player_properties)
