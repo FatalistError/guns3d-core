@@ -1,0 +1,25 @@
+Gun item metadata
+
+The ammo table format
+
+    {bullets={}, magazine="", loaded_bullet="", total_bullets=0}
+
+    Magazine:
+        this is the name of the magazine that the gun contains
+        if the gun does not use magazines, it will simply remain blank
+
+        example: "guns3d:STANAG"
+
+    Loaded_bullet:
+        the name of the current bullet in the chamber.
+        This is used for magazines containing multiple bullets,
+        on firing/reloading, this will be selected using weighted randoms:
+        `guns3d.weighted_randoms(ammo_table.bullets)`
+
+        example: "guns3d:556"
+
+    Bullets:
+        this is a table containing the names of bullets and the amount in the magazine/clip
+
+        example: {["guns3d:556"]=15, ["guns3d:556AP"]=15}
+

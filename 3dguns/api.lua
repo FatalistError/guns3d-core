@@ -27,7 +27,7 @@ function guns3d.fire(player, def)
                 end)
                 spread_rotation.z = 0
                 dir = vector.rotate(dir, spread_rotation)
-                guns3d.ray(player, pos, dir)
+                guns3d.ray(player, pos, dir, def)
             end
             --order matters
             guns3d.data[playername].rechamber_time = 60/def.firerate
@@ -46,8 +46,7 @@ function guns3d.fire(player, def)
     player:set_wielded_item(held_stack)
 end
 
-function guns3d.pull_trigger(active, controls_active, player)
-    local def = guns3d.get_gun_def(player, player:get_wielded_item())
+function guns3d.pull_trigger(active, controls_active, first_call, player, def)
     if active then
         if not (guns3d.data[playername].last_controls.LMB) and def.firetype == "burst" then
             guns3d.data[playername].fire_queue = def.burst_fire
@@ -56,144 +55,155 @@ function guns3d.pull_trigger(active, controls_active, player)
             guns3d.fire(player, def)
         end
         if def.firetype == "automatic" then
-            guns3d.fire(player, def)
+            if guns3d.data[player:get_player_name()].rechamber_time <= 0 then
+                guns3d.fire(player, def)
+            end
         end
         --ADD API FOR DIFFERENT FIRETYPES HERE
     end
 end
---NEW AMMO SYSTEM
---deserialize meta:get_string("ammo")
---this contains a table containing all ammo information
---{bullets={bullet_1=29, bullet_2=1}, magazine=magazine, loaded_bullet=bullet_2, total_bullets=30}
---bullet table will be passed to magazine on unload
---magazine table will be used to identify what magazine to unload (ofc)
---loaded_bullet will be future implementations of different bullets
---function
-function guns3d.reload(active, controls_active, player)
-    --this function was moved out of globalstep so may be a bit fucky
+
+function guns3d.reload(active, controls_active, first_call, player, def)
     local playername = player:get_player_name()
     local held_stack = player:get_wielded_item()
     local inv = player:get_inventory()
     local meta = held_stack:get_meta()
-    local animation = {}
-    local def = guns3d.get_gun_def(player, player:get_wielded_item())
     local ammo_table = minetest.deserialize(meta:get_string("ammo"))
-    if guns3d.data[playername].control_delay <= .2 then
-        guns3d.data[playername].control_delay = .2
+    local state = meta:get_int("state")
+    local next_state = state+1
+    local timer
+    if next_state > #def.reload then
+        next_state = 1
     end
-    --minetest.chat_send_all("active:"..dump(active).."  controls:"..dump(controls_active))
-    --minetest.chat_send_all("active")
-    if not guns3d.data[playername].anim_sounds.reload and controls_active then
-        guns3d.data[playername].anim_sounds.reload = true
-        if def.ammo_type == "magazine" then
-            animation = {{
-                time = def.reload_time,
-                frames = table.copy(def.animation_frames.reload)
-            }}
-            if ammo_table.magazine ~= "" then
-                local mag_stack = ItemStack(ammo_table.magazine)
-                local mag_meta = mag_stack:get_meta()
-                mag_meta:set_string("ammo", minetest.serialize(ammo_table))
-                mag_stack:set_wear(max_wear-max_wear*(ammo_table.total_bullets/guns3d.magazines[ammo_table.magazine]))
-                inv:add_item("main", mag_stack)
-                meta:set_string("ammo", minetest.serialize({bullets={}, magazine="", loaded_bullet="", total_bullets=0}))
-                player:set_wielded_item(held_stack)
-            end
-        end
-        guns3d.start_animation(animation, player)
-        guns3d.quick_dual_sfx(player, "reload", def.sounds["reload"].sound, def.sounds["reload"].distance)
+    if not active and controls_active then
+        --table.compare
     end
-    if not controls_active and not active then
-        --have extra animation for fractional reloading etc
-        guns3d.kill_dual_sfx(player, "reload", .1)
-        guns3d.end_current_animation(player)
-        guns3d.data[playername].anim_sounds.reload = nil
-    end
-    if active then
-        guns3d.data[playername].control_delay = 1
-        guns3d.kill_dual_sfx(player, "reload", .1)
-        guns3d.data[playername].anim_sounds.reload = nil
-        if def.ammo_type == "magazine" then
-            local mag_string
-            local stack_index
-            local magstack
-            local highest_ammo = 0
-            local index
-            for _, ammunition in pairs(def.ammunitions) do
-                for i = 1, inv:get_size("main") do
-                    if inv:get_stack("main", i):get_name() == ammunition then
-                        local temp_stack = inv:get_stack("main", i)
-                        local temp_ammo_table = temp_stack:get_meta():get_string("ammo")
-                        if temp_ammo_table == "" then
-                            temp_ammo_table = {bullets={}, magazine="", loaded_bullet="", total_bullets=0}
-                            temp_stack:get_meta():set_string("ammo", minetest.serialize({bullets={}, magazine=temp_stack:get_name(), loaded_bullet="", total_bullets=0}))
-
-                        else
-                            temp_ammo_table = minetest.deserialize(temp_ammo_table)
-                        end
-                        --check if mag has higher wear
-                        if temp_ammo_table.total_bullets >= highest_ammo then
-                            index = i
-                            magstack = temp_stack
-                            highest_ammo = temp_ammo_table.total_bullets
-                        end
-                    end
-                end
-            end
-            if magstack == nil then return end
-            meta:set_string("ammo", magstack:get_meta():get_string("ammo"))
-            inv:set_stack("main", index, "")
-            guns3d.data[playername].attached_gun:set_animation({x=1, y=10})
-            player:set_wielded_item(held_stack)
-        end
-        --[[if def.ammo_type == "fractional" then
-            if held_stack:get_wear() > 1 then
-                local ammo_list = {}
+    --start animations here
+    local anim = def.animation_frames[def.reload[next_state][3]]
+    if not guns3d.data[playername].reload_locked then
+        if first_call then
+            timer = def.reload[next_state][2]
+            local play_anim = false
+            if def.reload[next_state][1] == "reloaded" then
                 for _, ammunition in pairs(def.ammunitions) do
-                    if ammo_list[ammunition] == nil then ammo_list[ammunition] = 0 end
                     for i = 1, inv:get_size("main") do
                         if inv:get_stack("main", i):get_name() == ammunition then
-                            --this is to account for the possibility that it's already been set
-                            --don't wanna loop twice for no reason if there is ammo
-                            if meta:get_string("ammo") == "" then
-                                meta:set_string("ammo", ammunition)
-                                held_stack:set_wear(max_wear)
-                            end
-                            ammo_list[ammunition] = ammo_list[ammunition] + inv:get_stack("main", i):get_count()
+                            play_anim = true
                         end
                     end
                 end
-                if meta:get_string("ammo") ~= "" then
-                    if inv:contains_item("main", meta:get_string("ammo").." 1") then
-                        inv:remove_item("main", meta:get_string("ammo").." 1")
-                        local new_wear = held_stack:get_wear()-max_wear/def.clip_size
-                        if new_wear < 1 then new_wear = 1 end
-                        held_stack:set_wear(new_wear)
+            end
+            if def.reload[next_state][1] == "chambered" then
+                play_anim = true
+            end
+            if def.reload[next_state][1] == "unloaded" then
+                play_anim = true
+            end
+            if anim and play_anim then
+                guns3d.end_current_animation(player)
+                local animation = {{
+                    time = timer,
+                    frames = table.copy(anim)
+                }}
+                guns3d.start_animation(animation, player)
+            end
+        end
+        if active then
+            --This is equivelant to loading
+            local state_changed = false
+            if def.reload[next_state][1] == "reloaded" and not state_changed then
+                guns3d.data[playername].reload_locked = true
+                if def.reload.type == "magazine" then
+                    local mag_string, stack_index, magstack, index
+                    local highest_ammo = 0
+                    for _, ammunition in pairs(def.ammunitions) do
+                        for i = 1, inv:get_size("main") do
+                            if inv:get_stack("main", i):get_name() == ammunition then
+                                local temp_stack = inv:get_stack("main", i)
+                                local temp_ammo_table = temp_stack:get_meta():get_string("ammo")
+                                if temp_ammo_table == "" then
+                                    temp_ammo_table = {bullets={}, magazine="", loaded_bullet="", total_bullets=0}
+                                    temp_stack:get_meta():set_string("ammo", minetest.serialize({bullets={}, magazine=temp_stack:get_name(), loaded_bullet="", total_bullets=0}))
+                                else
+                                    temp_ammo_table = minetest.deserialize(temp_ammo_table)
+                                end
+                                --check if mag has higher wear
+                                if temp_ammo_table.total_bullets >= highest_ammo then
+                                    index = i; magstack = temp_stack; highest_ammo = temp_ammo_table.total_bullets
+                                end
+                            end
+                        end
+                    end
+                    if magstack then
+                        minetest.chat_send_all("magstack not nil")
+                        ammo_table = minetest.deserialize(magstack:get_meta():get_string("ammo"))
+                        inv:set_stack("main", index, "")
                         player:set_wielded_item(held_stack)
+                        state = next_state
                     end
                 end
+                state_changed = true
             end
-            if def.ammo_type == "non_fractional" then
+            --I may end up just getting rid of this bc of it causing animations to get... reeeeal wonky.
+            if def.reload[next_state][1] == "chambered" and not state_changed then
+                state = next_state
+                state_changed = true
             end
-        end]]
+            if def.reload[next_state][1] == "unloaded" and not state_changed then
+                --if chambered, then unload
+                if def.reload.type == "magazine" and ammo_table.magazine ~= "" then
+                    local mag_stack = ItemStack(ammo_table.magazine)
+                    local mag_meta = mag_stack:get_meta()
+                    mag_stack:set_wear(max_wear-max_wear*(ammo_table.total_bullets/guns3d.magazines[ammo_table.magazine]))
+                    mag_meta:set_string("ammo", minetest.serialize(ammo_table))
+                    inv:add_item("main", mag_stack)
+                    ammo_table = {bullets={}, magazine="", loaded_bullet="", total_bullets=0}
+                    state = next_state
+                    --kill anims and sounds
+                end
+                state_changed = true
+                --maybe give an option for fractional/clipped guns to do this
+            end
+            meta:set_string("ammo", minetest.serialize(ammo_table))
+            meta:set_int("state", state)
+            player:set_wielded_item(held_stack)
+        elseif controls_active then
+        end
+        if (not controls_active) and (not active) then
+            if guns3d.data[playername].animation_queue[1] and guns3d.data[playername].animation_queue[1].frames and table.compare(guns3d.data[playername].animation_queue[1].frames, anim) then
+                guns3d.end_current_animation(player)
+            end
+        end
+        if timer then
+            return {timer=timer}
+        end
+    else
+        return {timer=0}
     end
 end
-function guns3d.aim_down_sights(active, controls_active, player)
+function guns3d.aim_down_sights(active, controls_active, first_call, player)
     --make option for holding down in future
     if active then
         guns3d.data[player:get_player_name()].ads = not guns3d.data[player:get_player_name()].ads
     end
 end
-function guns3d.change_fire_mode(active, controls_active, player)
+function guns3d.change_fire_mode(active, controls_active, first_call, player, def)
     if active then
-        guns3d.data[playername].control_delay = 1
-        def = guns3d.get_gun_def(player, player:get_wielded_item())
+        if def.animation_frames.fire_mode then
+            local anim = def.animation_frames.fire_mode
+            local animation = {{
+                time = .3,
+                frames = table.copy(anim)
+            }}
+            guns3d.start_animation(animation, player)
+        end
+
+        guns3d.data[playername].control_delay = .3
         if guns3d.data[playername].fire_mode+1 > #def.fire_modes then
             guns3d.data[playername].fire_mode = 1
         else
             guns3d.data[playername].fire_mode = guns3d.data[playername].fire_mode + 1
         end
-        minetest.chat_send_all("firemode switched")
     end
 end
 
@@ -231,17 +241,19 @@ local default_gun_def = {
     firerate = 0,
     burst_fire = 0,
     chamber_time = 0,
-    reload_time = 0,
+    load_time = 0,
+    unloaded_time = 0,
     range = 0,
     pellets = 1,
 
     penetration = false,
     fire_modes = {"semi-automatic"},
     controls = {
-        reload = {{"zoom"}, false, false, 2},
-        change_fire_mode = {{"zoom", "sneak"}, false, false, 0},
-        fire = {{"LMB"}, false, true, 0},
-        aim = {{"RMB"}, false, false, 0}
+        --reload time is arbitrary, it needs time to modify its own table.
+        reload = {keys={"zoom"}, loop=true, timer=1},
+        change_fire_mode = {keys={"zoom", "sneak"}, loop=false, timer=0, ignore_other_cntrls=false, ignore_lock=true},
+        fire = {keys={"LMB"}, loop=true, timer=0},
+        aim = {keys={"RMB"}, loop=false, timer=0}
     },
     control_callbacks = {
         reload = guns3d.reload,
@@ -254,16 +266,11 @@ local default_gun_def = {
 local default_bullet_def = {
     texture = "cz527.obj",
     range = 1000,
-    max_node_pen = 0,
-    max_pen_deviation = 0,
-    min_pen_deviation = 0,
+    acronym = "STA",
+    penetration_deviation = 5,
+    penetration_RHA = 1000,
+    penetration_dropoff_RHA = .5,
     destroy_nodes = {},
-    penetratable_nodes = {
-        ["default:wood"] = 1,
-        ["stairs:slab_wood"] = 1,
-        ["default:brick"] = 1,
-        ["default:glass"] = 1
-    },
 }
 function guns3d.register_gun(name, def)
     --sanitize definition
@@ -282,7 +289,9 @@ function guns3d.register_gun(name, def)
     if def.screen_offset then
     end
     --get animation info (this may cause increased startup time/lag)
-
+    if def.reload_time then
+        --def.controls.reload.timer = def.reload_time
+    end
     def.name = name
     guns3d.guns[name] = def
     minetest.register_tool(name,{
@@ -312,12 +321,14 @@ function guns3d.register_gun(name, def)
             local name = string.gsub(self.name, "_visual", "")
             local def = guns3d.guns[name]
             local obj = self.object
-            if self.parent_player == nil then obj:remove() return end
-            local parent = minetest.get_player_by_name(self.parent_player)
-            if obj:get_attach() == nil or name ~= guns3d.data[parent:get_player_name()].held then
+            if self.parent_player == nil then obj:remove(); return end
+            local playername = self.parent_player
+            local player = minetest.get_player_by_name(playername)
+            local held = guns3d.data[playername].held
+            if obj:get_attach() == nil or name ~= held then
                 obj:remove()
                 return
-            elseif name == guns3d.data[parent:get_player_name()].held then
+            elseif name == held then
                 --obj:set_rotation(guns3d.data[playername].visual_offset.rotation)
                 local ads_modifier = vector.new()
                 if not guns3d.data[playername].ads then
@@ -330,14 +341,14 @@ function guns3d.register_gun(name, def)
                     if guns3d.data[playername].ads == false then
                         local normal_pos = def.offset
                         -- vector.multiply({x=normal_pos.x, y=normal_pos.z, z=-normal_pos.y}, 10)
-                        obj:set_attach(parent, "guns3d_hipfire_bone", normal_pos, -axial_rot, true)
+                        obj:set_attach(player, "guns3d_hipfire_bone", normal_pos, -axial_rot, true)
                     else
                         local normal_pos = def.ads_offset
-                        obj:set_attach(parent, "guns3d_aiming_bone", normal_pos, -axial_rot, true)
+                        obj:set_attach(player, "guns3d_aiming_bone", normal_pos, -axial_rot, true)
                     end
                 else
                     --smoooooth ads
-                    local normal_pos = guns3d.ads_interpolate(parent, guns3d.data[playername].ads_location)
+                    local normal_pos = guns3d.ads_interpolate(player, guns3d.data[playername].ads_location)
                 end
             end
 
@@ -518,8 +529,8 @@ function guns3d.get_gun_def(player, itemstack, name)
     --this is some weird sorting to prevent controls from being mis-detected... tl:dr, keep it or replace it, it's needed.
     if def.controls then
         for i, v in pairs(def.controls) do
-            sorting_table[i]=#v[1]
-            table.insert(value_table, #v[1])
+            sorting_table[i]=#v.keys
+            table.insert(value_table, #v.keys)
         end
         table.sort(value_table, function(a, b) return a > b end)
         for i2, v2 in pairs(sorting_table) do

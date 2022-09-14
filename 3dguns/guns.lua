@@ -1,4 +1,4 @@
-guns3d.register_magazine("no2.png", "50R STANAG (5.56x39mm)", "3dguns:extended_stanag", {"default:wood"}, 50)
+guns3d.register_magazine("no2.png", "50R STANAG (5.56x39mm)", "3dguns:extended_stanag", {"default:wood", "default:acacia_wood"}, 50)
 guns3d.register_magazine("no.png", "30R STANAG (5.56x39mm)", "3dguns:stanag", {"default:wood", "default:acacia_wood"}, 30)
 
 guns3d.register_gun("3dguns:m4a1", {
@@ -7,13 +7,12 @@ guns3d.register_gun("3dguns:m4a1", {
     root_offset = {x=0, y=0, z=0},
     ads_offset = {x=.7, y=0, z=4.67},
     vertical_rotation_offset = 0,
-    recoil_vel = {x=.3, y=.2},
-    axial_recoil_vel = {x=.08, y=.02},
+    recoil_vel = {x=.2, y=.2},
+    axial_recoil_vel = {x=.06, y=.06},
     --recoil = {x=.7, y=.25},
-    recoil_correction = {look_axial = 2, gun_axial = 20},
-    max_recoil_correction = 10,
-    ads_axis_rotation = {x=0, y=0, z=0},
-    ads_zoom_mp = 1.05,
+    recoil_correction = {look_axial = 2, gun_axial = 40},
+    max_recoil_correction = 6,
+    ads_zoom_mp = 1.5,
     ads_look_offset = .7,
     mesh = "m4a1.b3d",
     texture = "cz527.png",
@@ -26,31 +25,44 @@ guns3d.register_gun("3dguns:m4a1", {
     flash_offset = {x=0, y=-.86, z=5.8},
     flash_scale = .5,
     range = 200,
-    ammo_type = "magazine",
+    reload = {
+        type = "magazine",
+        {"unloaded", .8, "unload"},
+        {"reloaded", 1, "load"},
+    },
     ammunitions = {"3dguns:stanag", "3dguns:extended_stanag"},
-    reload_time = 2,
+    reload_time = 1,
     ads_time = .45,
     ads_spread = .02,
     hip_spread = 1,
     pellets = 1,
-    controls = {
-        reload = {{"zoom"}, false, false, 2},
-        change_fire_mode = {{"zoom", "sneak"}, false, false, 0},
-        fire = {{"LMB"}, false, true, 0},
-        aim = {{"RMB"}, false, false, 0}
-    },
-    arm_aiming_bones = {left="left_aimpoint", right="right_aimpoint"},
     chamber_time = 1,
     animation_frames = {
-        reload = {x=34, y=75},
+        unload = {x=2, y=34},
+        load = {x=34, y=75},
         rechamber = {x=100, y=115},
         fire = {x=75, y=82},
-        fire_mode_1 = {x=82, y=100},
-        unloaded = {x=1, y=1},
+        fire_mode = {x=82, y=98},
+        unloaded = {x=0, y=0},
+        loaded = {x=1, y=1}
     },
+    arm_animation_frames = {
+        --IN ORDER!!!
+        {frame=-1, right=vector.new(0,-2.5,-.7), left=vector.new(0,-0.9, 1.8)},
+        {frame=0, right=vector.new(0,-2.5,-.7), left=vector.new(0,-0.9, 1.8)},
+        {frame=16, right=vector.new(0,-2.5,-.7), left=vector.new(0,-0.9, 1.8)},
+        {frame=20, right=vector.new(0,-2.5,-.7), left=vector.new(-3,-2.7, -1.2)},
+        {frame=30, right=vector.new(0,-2.5,-.7), left=vector.new(0,-0.9, 1.8)},
+        {frame=40, right=vector.new(0,-2.5,-.7), left=vector.new(-3,-2.7, -1.2)},
+        {frame=60, right=vector.new(0,-2.5,-.7), left=vector.new(0,-0.9, 1.8)},
+        {frame=100, right=vector.new(0,-2.5,-.7), left=vector.new(-1,-1.4, 0.6)},
+        {frame=115, right=vector.new(0,-2.5,-.7), left=vector.new(0,-0.9, 1.8)}
+    },
+    --[[arm_aim_positions = {
+        right=vector.new(0,-2.5,-.7), left=vector.new(0,-0.9, 1.8)
+    },]]
     bullet = {
-        max_pen_deviation = {"override", 2},
-        min_pen_deviation = {"override", 2}
+        --bullet override here
     },
     sounds = {
         reload = {sound="cz527_fire", distance=40},

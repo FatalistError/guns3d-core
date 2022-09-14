@@ -13,20 +13,25 @@ function table.compare(tbl1, tbl2)
             result = false
         elseif (type(tbl1[i])=="table" and not table.compare(tbl1[i], tbl2[i])) then
             result = false
-        elseif not type(tbl1[i])=="table" and (tbl1[i] ~= tbl2[i]) then
-            result = false
-        end
-    end
-    for i, v in pairs(tbl2) do
-        if type(tbl1[i]) ~= type(tbl2[i]) then
-            result = false
-        elseif (type(tbl1[i])=="table" and not table.compare(tbl1[i], tbl2[i])) then
-            result = false
-        elseif not type(tbl1[i])=="table" and (tbl1[i] ~= tbl2[i]) then
+        elseif (tbl1[i] ~= tbl2[i]) then
             result = false
         end
     end
     return result
+end
+--this function is designed for use in the main globalstep, and such uses many pre-existing variables within it to save resources.
+function set_gun_rest_animation(player, def, attached_obj)
+    local ammo_table = minetest.deserialize(player:get_wielded_item():get_meta():get_string("ammo"))
+    local current_anim, _, _, _ = attached_obj:get_animation()
+    if not guns3d.data[playername].animated then
+        if ammo_table.magazine == "" and def.reload.type == "magazine" then
+            attached_obj:set_animation(def.animation_frames.unloaded)
+            guns3d.data[playername].current_animation_frame = def.animation_frames.unloaded.x
+        else
+            attached_obj:set_animation(def.animation_frames.loaded)
+            guns3d.data[playername].current_animation_frame = def.animation_frames.unloaded.y
+        end
+    end
 end
 local function interpolate(x, y, v)
     local returns
@@ -41,6 +46,9 @@ local function interpolate(x, y, v)
     return returns
 end
 function guns3d.handle_muzzle_fsx(player, def)
+    if guns3d.data[playername].particle_spawners.muzzle_smoke and guns3d.data[playername].particle_spawners.muzzle_smoke ~= -1 then
+        minetest.delete_particlespawner(guns3d.data[playername].particle_spawners.muzzle_smoke, player:get_player_name())
+    end
     local dir, offset_pos = guns3d.gun_dir_pos(player, def.flash_offset/10)
     offset_pos=offset_pos+player:get_pos()
     local min = vector.rotate(vector.new(-2, -2, -.3), vector.dir_to_rotation(dir))
@@ -53,7 +61,7 @@ function guns3d.handle_muzzle_fsx(player, def)
         pos = def.flash_offset/10,
         radius = .04,
         glow = 3.5,
-        vel = {min=vector.new(-2, -2, -.3)+player:get_velocity(), max=vector.new(2, 2, .3)+player:get_velocity(), bias=0},
+        vel = {min=vector.new(-2, -2, -.3), max=vector.new(2, 2, .3), bias=0},
         texpool = {
             {
                 name = "smoke2.png",
@@ -105,18 +113,19 @@ function guns3d.handle_muzzle_fsx(player, def)
             }
       }
     })
-    minetest.add_particlespawner({
+    --muzzle smoke
+    guns3d.data[playername].particle_spawners.muzzle_smoke = minetest.add_particlespawner({
         exptime = .3,
-        time = 1.8,
-        amount = 20,
+        time = 2,
+        amount = 50,
         pos = def.flash_offset/10,
-        glow = 3.5,
-        vel = {min=vector.new(-.28,.4,.2), max=vector.new(.28,.6,1), bias=0},
+        glow = 2,
+        vel = {min=vector.new(-.1,.4,.2), max=vector.new(.1,.6,1), bias=0},
         attached = guns3d.data[playername].attached_gun,
         texpool = {
             {
                 name = "smoke2.png",
-                alpha_tween = {.08, 0},
+                alpha_tween = {.12, 0},
                 scale = 1.4,
                 blend = "alpha",
                 animation = {
@@ -128,7 +137,7 @@ function guns3d.handle_muzzle_fsx(player, def)
             },
             {
                 name = "smoke2.png^[multiply:#b0b0b0",
-                alpha_tween = {.08, 0},
+                alpha_tween = {.2, 0},
                 scale = 1.4,
                 blend = "alpha",
                 animation = {
@@ -213,6 +222,7 @@ function guns3d.end_current_animation(player)
     guns3d.data[playername].attached_gun:set_animation({x=0, y=0})
     guns3d.data[playername].animated = false
     guns3d.data[playername].animation_queue = {}
+    minetest.chat_send_all("animation_killed")
 end
 function guns3d.start_animation(animation_table, player)
     local playername = player:get_player_name()
@@ -316,7 +326,6 @@ function guns3d.arm_dir_rotation(player, left, bone)
     if guns3d.data[playername].attached_gun then
         local def = guns3d.get_gun_def(player, player:get_wielded_item())
         local model_def, _ = guns3d.get_model_def_name(player)
-        local anim_table = guns3d.data[playername].animation_queue[1]
 
         local objref = guns3d.data[playername].attached_gun
         local frame = 0
@@ -324,9 +333,7 @@ function guns3d.arm_dir_rotation(player, left, bone)
         if not objref:get_pos() then
             offset = vector.new()
         end
-        if anim_table then
-            frame = anim_table.frames.y-((anim_table.frames.y-anim_table.frames.x)*(anim_table.time/anim_table.length))
-        end
+        frame = guns3d.current_animation_frame
         --animation compatibility needed in future (though it may be better to just simulate it this way)
         local arm_pos = vector.new(model_def.offsets.arm_right_global)/10
         if left then
@@ -334,12 +341,13 @@ function guns3d.arm_dir_rotation(player, left, bone)
         end
         arm_pos.x = -arm_pos.x
 
-        if def.arm_aiming_bones and objref:get_pos() then
+        if objref:get_pos() then
             if left then
-                offset = vector.new()
+                offset = guns3d.data[playername].arm_animation_offsets.left
             else
-                offset = vector.new()
+                offset = guns3d.data[playername].arm_animation_offsets.right
             end
+            offset = vector.new(offset)/10
         end
         local _, gun_pos = guns3d.gun_dir_pos(player, offset, true)
         dir = vector.direction(arm_pos, gun_pos)
@@ -394,65 +402,112 @@ function guns3d.tracer(player, start_pos, end_pos, def)
     obj:set_velocity(dir*800)
 end
 
-function guns3d.ray(player, pos, dir, not_first_iter, bullet_info, def)
+--this is a complicated task, I've re-written it multiple times,
+--I've come to the conclusion that ultimately this will not be clean or pretty.
+function guns3d.ray(player, pos, dir, def, bullet_info)
+    local constant = 1
+    --initialize if first ray
     if not bullet_info then
-        def = guns3d.get_gun_def(player, player:get_wielded_item())
-        bullet_info = {history={}, range_left=def.bullet.range}
-        --no point in calling this over several iterations.
+        bullet_info = {
+            history = {},
+            state = "free",
+            last_pos = pos,
+            last_node = "",
+            range_left = def.bullet.range,
+            penetration_left = def.bullet.penetration_RHA
+            --last_pointed
+        }
+        table.insert(bullet_info.history, {start_pos=pos, state="free"})
     end
-    local ray
+    --set ray end
+    local pos2 = pos+(dir*bullet_info.range_left)
+    local block_ends_early = false
     if bullet_info.state == "transverse" then
-        ray = minetest.raycast(pos, pos+(bullet_info.range_left*dir), true, true)
-    else
-        ray = minetest.raycast(pos, pos+(dir*.5), true, true)
-    end
-    local last_hit_info = {}
-    if bullet_info.history[#bullet_info.history] then
-        last_hit_info = bullet_info.history[#bullet_info.history]
-    end
-    local new_dir = dir
-    for _, i in pairs({"x", "y", "z"}) do
-        local random_num
-        if (math.random() > .5) then random_num = 1 else random_num = -1 end
-        local new_v = vector.new()
-        new_v[i] = math.random(def.bullet.min_pen_deviation, def.bullet.max_pen_deviation)*random_num
-         new_dir = vector.rotate(new_dir, new_v*math.pi/180)
-    end
-    local pointed
-    for pointed in ray do
-        if pointed.type == "object" then
-            --for now it just ignores objects, damage has not yet been implemented.
-        end
-        local node
-        if pointed.type == "node" then
-            if bullet_info.state ~= "transverse" then
-                pointed = pointed
+        local pointed
+        --its import
+        local ray = minetest.raycast(pos+dir, pos, false, false)
+        for p in ray do
+            --line gore
+            if p.type == "node" and (table.compare(p.under, bullet_info.last_pointed.under) or not minetest.registered_nodes[minetest.get_node(bullet_info.last_pointed.under).name].node_box) then
+                pointed = p
                 break
             end
         end
-    end
-    if bullet_info.state == "transverse" then
-        if length > .5 then
-            length = .5
+        --maybe remove check for pointed
+        if pointed and vector.distance(pointed.intersection_point, pos) < constant then
+            pos2 = pointed.intersection_point
+            block_ends_early = true
+        else
+            pos2 = pos+(dir*constant)
         end
-        new_dir = vector.new(interpolate(dir, new_dir, length/.5))
     end
-    if bullet_info.state == "free" then
-    end
-    if not not_first_iter then
-        for i, v in pairs(bullet_info.history) do
-            local pos = v.pos
-            local hud = player:hud_add({
-                hud_elem_type = "image_waypoint",
-                text = "muzzle_flash2.png",
-                world_pos =  pos,
-                scale = {x=.6, y=.6},
-                alignment = {x=0,y=0},
-                offset = {x=0,y=0},
-            })
-            minetest.after(20, function(hud)
-                player:hud_remove(hud)
-            end, hud)
+    local ray = minetest.raycast(pos, pos2, true, true)
+    local pointed
+    local next_ray_pos = pos2
+    for p in ray do
+        if vector.distance(p.intersection_point, bullet_info.last_pos) > 0 and vector.distance(p.intersection_point, bullet_info.last_pos) < bullet_info.range_left then
+            local distance = vector.distance(pos, p.intersection_point)
+            if (p.type == "node") and guns3d.node_properties[minetest.get_node(p.under).name].behavior ~= "ignore" then
+                local next_penetration_val = bullet_info.penetration_left-(distance*guns3d.node_properties[minetest.get_node(p.under).name].rha*1000)
+                if bullet_info.state ~= "transverse" then
+                    pointed = p
+                    bullet_info.state = "transverse"
+                    next_ray_pos = p.intersection_point
+                else
+                    pointed = p
+                    if minetest.get_node(p.under).name ~= bullet_info.last_node and next_penetration_val > 0 and guns3d.node_properties[minetest.get_node(p.under).name].behavior ~= "ignore"  then
+                        next_ray_pos = p.intersection_point
+                    end
+                end
+                break
+            end
+            if p.type == "object" then
+                local next_penetration_val
+                if bullet_info.state == "transverse" then
+                    mext_penetration_val = bullet_info.penetration_left-(distance*guns3d.node_properties[minetest.get_node(bullet_info.last_pointed.under).name].rha*1000)
+                end
+                if bullet_info.penetration_left > 0 then
+                    if (bullet_info.state == "transverse" and next_penetration_val > 0) or (bullet_info.state == "free" and bullet_info.penetration_left-def.bullet.penetration_dropoff_RHA*distance > 0) then
+                        local penetration_val = next_penetration_val
+                        if bullet_info.state == "free" then
+                            bullet_info.penetration_left = bullet_info.penetration_left-def.bullet.penetration_dropoff_RHA*distance
+                            penetration_val = bullet_info.penetration_left
+                        end
+                        --damage player here with damage proportional to RHA penetration left
+                    end
+                end
+            end
         end
+    end
+    local distance = vector.distance(pos, next_ray_pos)
+    local new_dir = dir
+    local node_properties
+    if pointed then
+        node_properties = guns3d.node_properties[minetest.get_node(pointed.under).name]
+    end
+    if block_ends_early or not pointed then
+        bullet_info.state = "free"
+    end
+    if bullet_info.history[#bullet_info.history].state ~= "transverse" then
+        bullet_info.penetration_left=bullet_info.penetration_left-(distance*def.bullet.penetration_dropoff_RHA)
+    elseif pointed then
+        local rotation = vector.apply(vector.new(), function(a)
+            a=a+(((math.random()-.5)*2)*node_properties.random_deviation*def.bullet.penetration_deviation*distance)
+            return a
+        end)
+        new_dir = vector.rotate(new_dir, rotation*math.pi/180)
+        bullet_info.penetration_left=bullet_info.penetration_left-(distance*node_properties.rha*1000)
+    end
+    bullet_info.range_left = bullet_info.range_left-distance
+    bullet_info.last_pointed = pointed
+    if pointed then
+        bullet_info.last_node = minetest.get_node(pointed.under).name
+    end
+    bullet_info.last_pos = pos
+
+    table.insert(bullet_info.history, {start_pos=pos, state=bullet_info.state})
+    minetest.chat_send_all("pen applied: "..dump(bullet_info.penetration_left))
+    if bullet_info.range_left > 0.001 and bullet_info.penetration_left > 0 then
+        guns3d.ray(player, next_ray_pos, new_dir, def, bullet_info)
     end
 end
