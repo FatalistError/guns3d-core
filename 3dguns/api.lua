@@ -234,8 +234,6 @@ local default_gun_def = {
     ads_spread = 0,
     hip_spread = 0,
 
-    flash_entity = "3dguns:flash_entity",
-    flash_texture = "muzzle_flash2.png",
     flash_offset = vector.new(),
 
     firerate = 0,
@@ -246,6 +244,8 @@ local default_gun_def = {
     range = 0,
     pellets = 1,
 
+    reticle_obj = "3dguns:generic_reticle",
+
     penetration = false,
     fire_modes = {"semi-automatic"},
     controls = {
@@ -253,7 +253,7 @@ local default_gun_def = {
         reload = {keys={"zoom"}, loop=true, timer=1},
         change_fire_mode = {keys={"zoom", "sneak"}, loop=false, timer=0, ignore_other_cntrls=false, ignore_lock=true},
         fire = {keys={"LMB"}, loop=true, timer=0},
-        aim = {keys={"RMB"}, loop=false, timer=0}
+        aim = {keys={"RMB"}, loop=false, timer=0, ignore_lock=true}
     },
     control_callbacks = {
         reload = guns3d.reload,
@@ -336,19 +336,14 @@ function guns3d.register_gun(name, def)
                 end
                 local axial_rot = guns3d.data[playername].total_rotation.gun_axial+ads_modifier
                 --axial_recoil = guns3d.ordered_rotation(axial_recoil)
-                if guns3d.data[playername].ads_location == 1 or guns3d.data[playername].ads_location == 0 then
-                    --attach to the correct bone
-                    if guns3d.data[playername].ads == false then
-                        local normal_pos = def.offset
-                        -- vector.multiply({x=normal_pos.x, y=normal_pos.z, z=-normal_pos.y}, 10)
-                        obj:set_attach(player, "guns3d_hipfire_bone", normal_pos, -axial_rot, true)
-                    else
-                        local normal_pos = def.ads_offset
-                        obj:set_attach(player, "guns3d_aiming_bone", normal_pos, -axial_rot, true)
-                    end
+                --attach to the correct bone
+                if guns3d.data[playername].ads == false then
+                    local normal_pos = def.offset
+                    -- vector.multiply({x=normal_pos.x, y=normal_pos.z, z=-normal_pos.y}, 10)
+                    obj:set_attach(player, "guns3d_hipfire_bone", normal_pos, -axial_rot, true)
                 else
-                    --smoooooth ads
-                    local normal_pos = guns3d.ads_interpolate(player, guns3d.data[playername].ads_location)
+                    local normal_pos = def.ads_offset+vector.new(def.ads_look_offset,0,0)
+                    obj:set_attach(player, "guns3d_aiming_bone", normal_pos, -axial_rot, true)
                 end
             end
 

@@ -42,15 +42,20 @@ minetest.register_globalstep(function(dtime)
             if held == gunname then
                 guns3d.data[playername].is_holding = true
                 local player_properties = player:get_properties()
-                local arm_obj = guns3d.data[playername].attached_arms
-                local attached_obj = guns3d.data[playername].attached_gun
-                local ammo_table = minetest.deserialize(held_stack:get_meta():get_string("ammo"))
+
+                local gun_obj = guns3d.data[playername].attached_gun
+                local reticle_obj = guns3d.data[playername].attached_reticle
+
                 local meta = held_stack:get_meta()
+                local ammo_table = minetest.deserialize(meta:get_string("ammo"))
+
                 local player_controls = player:get_player_control()
                 local def = guns3d.get_gun_def(player, player:get_wielded_item())
                 local model_def, model_name = guns3d.get_model_def_name(player)
                 --this will break if a gun is placed into hand!
+                --YOUR RAM IS MINE MORTAL
                 if guns3d.data[playername].last_wield_index ~= player:get_wield_index() then
+                    --timers go brrr
                     guns3d.data[playername].current_anim = "rest"
                     guns3d.data[playername].anim_state = 0
                     guns3d.data[playername].ads_location = 0
@@ -59,17 +64,23 @@ minetest.register_globalstep(function(dtime)
                     guns3d.data[playername].control_delay = .4
                     guns3d.data[playername].fire_queue = 0
                     guns3d.data[playername].time_since_last_fire = 0
-                    --timers and stuff
-                    guns3d.data[playername].sway_timer = def.sway_timer
-                    guns3d.data[playername].sway_vel = vector.new()
+                    guns3d.data[playername].walking_tick = 0
 
-                    guns3d.data[playername].wag_offset = {gun_axial=vector.new(), look_axial=vector.new()}
+                    --offsets
                     guns3d.data[playername].recoil_offset = {gun_axial=vector.new(), look_axial=vector.new()}
                     guns3d.data[playername].recoil_vel = {gun_axial=vector.new(), look_axial=vector.new()}
-                    guns3d.data[playername].sway_offset = vector.new()
-                    guns3d.data[playername].vertical_aim = player:get_look_vertical()
+                    guns3d.data[playername].sway_vel = {gun_axial=vector.new(), look_axial=vector.new()}
+                    guns3d.data[playername].sway_offset = {gun_axial=vector.new(), look_axial=vector.new()}
+                    guns3d.data[playername].breathing_offset = {gun_axial=vector.new(), look_axial=vector.new()}
+                    guns3d.data[playername].jump_offset = {gun_axial=vector.new(), look_axial=vector.new()}
+                    guns3d.data[playername].walking_offset = {gun_axial=vector.new(), look_axial=vector.new()}
+                    guns3d.data[playername].deviation_offset = vector.new()
                     guns3d.data[playername].total_rotation = {gun_axial=vector.new(), look_axial=vector.new()}
+                    --guns3d.data[playername].reticle_fade_in = 1
 
+                    --look stuff
+                    guns3d.data[playername].vertical_aim = player:get_look_vertical()
+                    guns3d.data[playername].last_look = vector.new(player:get_look_vertical()*180/math.pi, player:get_look_horizontal()*180/math.pi, 0)
                     --replaace with "rechamber" with existing control delay timer.
                     guns3d.data[playername].reload_locked = false
                     guns3d.data[playername].rechamber_time = def.chamber_time
@@ -126,26 +137,61 @@ minetest.register_globalstep(function(dtime)
                         end
                     end
                 end
-                --=================== THE GUN =======================
-                if not attached_obj then
-                    attached_obj = minetest.add_entity(player:get_pos(), gunname.."_visual")
-                    local self = attached_obj:get_luaentity()
-                    self.parent_player = playername
-                    attached_obj:set_attach(player, "guns3d_hipfire_bone", vector.multiply({x=def.offset.x, y=def.offset.z, z=-def.offset.y}, 10), def.rot_offset, true)
-                    guns3d.data[playername].attached_gun = attached_obj
-                    if def.reticle ~= nil then
-                        local reticle_obj = minetest.add_entity(player:get_pos(), "3dguns:reticle")
-                        local modifier = vector.new(); if def.reticle.auto_center == true then modifier = {x=0, y=-def.ads_offset.y*10, z=0} end
-                        reticle_obj:set_attach(attached_obj, def.reticle.bone, vector.add(def.reticle.offset, {x=0,z=0,y=0}), {x=90,y=0, z=0}, true)
-                        local self = reticle_obj:get_luaentity()
-                        self.image = def.reticle.image
-                        self.image_size = def.reticle.image_size/100
+                local sway = guns3d.data[playername].sway_offset
+                local sway_vel = guns3d.data[playername].sway_vel
+                local recoil = guns3d.data[playername].recoil_offset
+                local recoil_vel = guns3d.data[playername].recoil_vel
+                local walking_offset = guns3d.data[playername].walking_offset
+                local jump_offset = guns3d.data[playername].jump_offset
+                local breathing = guns3d.data[playername].breathing_offset
+                local deviation = guns3d.data[playername].deviation_offset
+                --=============== movement detection stuff ====================
+                local is_touching_ground = false
+                local is_in_fluid = false
+                local ray = minetest.raycast(player:get_pos()+vector.new(0, player_properties.eye_height, 0), player:get_pos()-vector.new(0,.1,0), true, true)
+                for pointed_thing in ray do
+                    if pointed_thing.type == "object" then
+                        if pointed_thing.ref ~= player and pointed_thing.ref:get_properties().physical == true then
+                            is_touching_ground = true
+                        end
                     end
+                    if pointed_thing.type == "node" then
+                        is_touching_ground = true
+                    end
+                end
+                if not guns3d.data[playername].was_touching_ground then
+                    if is_touching_ground then
+                        guns3d.data[playername].was_touching_ground = true
+                    else
+                        guns3d.data[playername].was_touching_ground = false
+                    end
+                end
+                local velocity = player:get_velocity()
+                local is_walking = false
+                if vector.length(vector.new(velocity.x, 0, velocity.z)) > .1 then
+                    is_walking = true
+                end
+                --bad practice to use a name like this in a large enviornment.
+                ray = nil
+                --=================== THE GUN =======================
+                if not gun_obj then
+                    gun_obj = minetest.add_entity(player:get_pos(), gunname.."_visual")
+                    local self = gun_obj:get_luaentity()
+                    self.parent_player = playername
+                    gun_obj:set_attach(player, "guns3d_hipfire_bone", def.offset, nil, true)
+                    guns3d.data[playername].attached_gun = gun_obj
+                end
+                if not reticle_obj and def.reticle then
+                    reticle_obj = minetest.add_entity(player:get_pos(), def.reticle_obj)
+                    local self = reticle_obj:get_luaentity()
+                    self.parent_player = playername
+                    self.gun_name = held
+                    reticle_obj:set_attach(player, "guns3d_reticle_bone", {x=def.ads_look_offset,y=0,z=def.offset.z+def.reticle.offset}, nil, true)
+                    guns3d.data[playername].attached_reticle = reticle_obj
                 end
                 --======================== ANIMATIONS ==========================
                 if guns3d.data[playername].animation_queue then
                     local anim_table = guns3d.data[playername].animation_queue[1]
-                    print(dump())
                     if anim_table ~= nil then
                         if not guns3d.data[playername].animated then
                             guns3d.data[playername].animated = true
@@ -155,20 +201,20 @@ minetest.register_globalstep(function(dtime)
                             local extra_frame
                             if guns3d.data[playername].anim_flip_flop then extra_frame = 1 else extra_frame = 0 end
                             local frame_rate = math.abs(anim_table.frames.y-anim_table.frames.x)/anim_table.time
-                            attached_obj:set_animation({x=anim_table.frames.x, y=anim_table.frames.y+extra_frame}, frame_rate, 0, false)
+                            gun_obj:set_animation({x=anim_table.frames.x, y=anim_table.frames.y+extra_frame}, frame_rate, 0, false)
                         end
                         if (anim_table.time-dtime) >= 0 then
                             anim_table.time=anim_table.time-dtime
                             --if the condition function returns false it kills the animation
                             if anim_table.func and anim_table.func(player, anim_table)==false then
                                 table.remove(guns3d.data[playername].animation_queue, 1)
-                                set_gun_rest_animation(player, def, attached_obj)
+                                set_gun_rest_animation(player, def, gun_obj)
                                 guns3d.data[playername].animated = false
                             end
                         else
                             --otherwise end the animation
                             table.remove(guns3d.data[playername].animation_queue, 1)
-                            set_gun_rest_animation(player, def, attached_obj)
+                            set_gun_rest_animation(player, def, gun_obj)
                             guns3d.data[playername].animated = false
                         end
                     end
@@ -195,18 +241,18 @@ minetest.register_globalstep(function(dtime)
                     end
                     --print(dump(guns3d.data[playername].arm_animation_offsets))
                 end
-                local current_anim, _, _, _ = attached_obj:get_animation()
+                local current_anim, _, _, _ = gun_obj:get_animation()
                 if not guns3d.data[playername].animated then
                     if ammo_table.magazine == "" and def.reload.type == "magazine" then
-                        attached_obj:set_animation(def.animation_frames.unloaded)
+                        gun_obj:set_animation(def.animation_frames.unloaded)
                         guns3d.data[playername].current_animation_frame = def.animation_frames.unloaded.x
                     else
-                        attached_obj:set_animation(def.animation_frames.loaded)
+                        gun_obj:set_animation(def.animation_frames.loaded)
                         guns3d.data[playername].current_animation_frame = def.animation_frames.unloaded.y
                     end
                 end
 
-                --====================== controls =================
+                --====================================================== controls ===========================================================================
                 --this is just built in ADS stuff
                 guns3d.arm_dir_rotation(player)
                 player:set_eye_offset({x=def.ads_look_offset*guns3d.data[playername].ads_location, z=0, y=0})
@@ -264,7 +310,6 @@ minetest.register_globalstep(function(dtime)
                 local controls_locked = false
                 --"control_index_list" is basically a heirarchy of what should be checked first
                 --this is to prevent something like {"z"} overiding {"z", "shift"} if {"z", "shift"} are active.
-                print(dump(guns3d.data[playername].control_delay))
                 for _, i in ipairs(def.control_index_list) do
                     local ctrl_def = def.controls[i]
                     local ctrl_data = guns3d.data[playername].control_data[i]
@@ -317,13 +362,14 @@ minetest.register_globalstep(function(dtime)
                     end
                 end
                 --important that this is called after the controls and not before, as the state can have changed, which will cause undesirable results.
-                set_gun_rest_animation(player, def, attached_obj)
-                --================= HUD ===================================
+                set_gun_rest_animation(player, def, gun_obj)
+                --============================================================== HUD =====================================================================
                 --update this to only send changes when there's a change
                 --reload bar
                 local timer = guns3d.data[playername].control_data.reload.timer
                 player:hud_set_flags({wielditem = false, crosshair = false})
-                --[[if timer < def.reload_time and timer <= def.reload_time and timer >= 0 then
+                --[[if timer < def.reload_time and timer >= 0 and not guns3d.data[playername].reload_locked then
+                    minetest.chat_send_all(timer)
                     if guns3d.hud_id[playername].reload_bar == nil then
                         guns3d.hud_id[playername].reload_bar = player:hud_add({
                             hud_elem_type = "statbar",
@@ -446,109 +492,171 @@ minetest.register_globalstep(function(dtime)
                     end
                 end
 
-                --================= Recoil, sway, and the like ============================
+                --================= innaccurcies ============================
+
+                if time == nil then time = dtime else
+                    time=time+dtime*3
+                end
+                --this will all eventually be effected by stamina
+                breath = (math.sin((time/4.2)*math.pi))
                 for _, axis in pairs({"look_axial", "gun_axial"}) do
+                    --breathing
+                    breathing[axis] = vector.new(breath,0,0)*def.breathing_offset[axis]
+                    --sway
+                    local ran
+                    ran = vector.apply(vector.new(), function(i,v)
+                        if i ~= "x" then
+                            return (math.random()-.5)*2
+                        end
+                    end)
+                    ran.z = 0
+                    sway_vel[axis] = vector.normalize(sway_vel[axis]+(ran*dtime))*def.sway_vel[axis]
+                    sway[axis]=sway[axis]+(sway_vel[axis]*dtime)
+                    if vector.length(sway[axis]) > def.sway_max[axis] then
+                        sway[axis]=vector.normalize(sway[axis])*def.sway_max[axis]
+                        sway_vel[axis] = vector.new()
+                    end
+
+                    --recoil stuff sorta needs to be done like this
                     for _, i in pairs({"x", "y"}) do
-                        local recoil = guns3d.data[playername].recoil_offset[axis][i]
-                        local recoil_vel = guns3d.data[playername].recoil_vel[axis][i]
-                        --order matters here.
-                        --apply velocity
+                        if is_walking then
+                            local time = guns3d.data[playername].walking_tick
+                            local multiplier = 1
+                            if i == "x" then
+                                multiplier = 2
+                            end
+                            walking_offset[axis][i] = math.sin((time/2)*math.pi*multiplier)*def.walking_offset[axis][i]
+                        else
+                            local OGval = walking_offset[axis][i]
+                            if math.abs(walking_offset[axis][i]) > .05 then
+                                local multiplier = (walking_offset[axis][i]/math.abs(walking_offset[axis][i]))
+                                walking_offset[axis][i] = walking_offset[axis][i]-(dtime*2*multiplier)
+                            else
+                                walking_offset[axis][i] = 0
+                            end
+                            if math.abs(walking_offset[axis][i]) > math.abs(OGval) then
+                                walking_offset[axis][i] = 0
+                            end
+                        end
+                        --jumping/in air stuff
+                        local jump_offset = jump_offset[axis][i]
+                        local added_jump_offset = def.jump_offset[axis][i]*dtime*math.abs(velocity.y)
+                        local OGjump_offset = jump_offset
+                        local multiplier = (jump_offset/math.abs(jump_offset))*-1
+                        if is_touching_ground and guns3d.data[playername].was_touching_ground then
+                            if math.abs(jump_offset) > 0.001 then
+                                jump_offset=jump_offset-(jump_offset*12*dtime)
+                                if math.abs(jump_offset) > math.abs(jump_offset) then
+                                    jump_offset = 0
+                                end
+                            else
+                                --jump_offset = 0
+                            end
+                            if jump_offset > OGjump_offset then
+                                jump_offset = 0
+                            end
+                        end
+                        if velocity.y > .1 then
+                            guns3d.data[playername].control_delay = .1
+                            if math.abs(jump_offset+added_jump_offset)<=math.abs(def.jump_offset[axis][i]) then
+                                jump_offset = jump_offset + added_jump_offset
+                            else
+                                jump_offset = def.jump_offset[axis][i]
+                            end
+                        end
+                        --recoil
+                        local recoil = recoil[axis][i]
+                        local OGrecoil_vel = recoil_vel[axis][i]
+                        local recoil_vel = recoil_vel[axis][i]
                         recoil = recoil + recoil_vel
-                        if math.abs(recoil_vel) > 0.00001 then
+                        if math.abs(recoil_vel) > 0.001 then
                             recoil_vel = recoil_vel * (recoil_vel/(recoil_vel/(def.recoil_reduction*2))*dtime)
                         else
                             recoil_vel = 0
                         end
-                        --correct recoil
-                        if math.abs(recoil) > 0.00001 then
+                        local OGrecoil = recoil
+                        if math.abs(recoil) > 0.001 then
                             local correction_multiplier = guns3d.data[playername].time_since_last_fire*def.recoil_correction[axis]
                             local correction_factor = recoil*correction_multiplier
                             if correction_factor > def.max_recoil_correction then
                                 correction_factor = def.max_recoil_correction*(math.abs(def.max_recoil_correction)/def.max_recoil_correction)
                             end
-                            --have to use "control int" bc negative squareroots cause NAN
-                            local control_int = (recoil/math.abs(recoil))
                             recoil=recoil-correction_factor*dtime
-                            --[[if i=="x" and axis=="look_axial" then
-                                print(dump(recoil*correction_multiplier))
-                            end]]
+                            if math.abs(recoil) > math.abs(OGrecoil) then
+                                recoil = 0
+                            end
                         end
                         guns3d.data[playername].recoil_offset[axis][i] = recoil
                         guns3d.data[playername].recoil_vel[axis][i] = recoil_vel
+                        guns3d.data[playername].jump_offset[axis][i] = jump_offset
+                        --this is hacky, it just checks if it's NaN since NaN isnt equivelant to itself
+                        if sway[axis][i] ~= sway[axis][i] then
+                            sway[axis] = vector.new()
+                        end
                     end
                 end
-                guns3d.data[playername].time_since_last_fire = guns3d.data[playername].time_since_last_fire + dtime
-                if def.sway_angle ~= 0 then
-                    guns3d.data[playername].sway_timer = guns3d.data[playername].sway_timer + dtime
-                    if guns3d.data[playername].sway_timer >= def.sway_timer then
-                        local old_pos = guns3d.data[playername].sway_offset
-                        local new_pos = vector.new()
-                        new_pos.x = math.random(def.sway_angle*100, -def.sway_angle*100)
-                        new_pos.y = math.random(def.sway_angle*100, -def.sway_angle*100)
-                        new_pos = vector.divide(new_pos, 100)
-                        local distance = vector.subtract(new_pos, old_pos)
-                        local new_velocity = vector.divide(distance, def.sway_timer)
-                        guns3d.data[playername].sway_vel = new_velocity
-                        guns3d.data[playername].sway_timer = 0
+                if is_walking then
+                    local velocity = table.copy(velocity)
+                    velocity.y = 0
+                    velocity = vector.length(velocity)
+                    if velocity > 6 then
+                        velocity = 6
                     end
+                    guns3d.data[playername].walking_tick = guns3d.data[playername].walking_tick + (dtime*velocity)
+                else
+                    guns3d.data[playername].walking_tick = 0
                 end
-                guns3d.data[playername].sway_offset = vector.add(guns3d.data[playername].sway_offset, vector.multiply(guns3d.data[playername].sway_vel, dtime))
+                guns3d.data[playername].time_since_last_fire=guns3d.data[playername].time_since_last_fire+dtime
+                --sway = vector.add(sway, vector.multiply(sway_vel, dtime))
                 --gun wag based on player velocity
-                local player_vel = player:get_velocity()
-                if time == nil then time = dtime else
-                    time=time+dtime*3
-                end
-                player_vel = math.sqrt((player_vel.x^2)+(player_vel.z^2))
-                for _, axis in pairs({"look_axial", "gun_axial"}) do
-                    if player_vel > .5 then
-                        local multiplier = 1
-                        if axis == "gun_axial" then
-                            multiplier = -.2
-                        end
-                        local wag_x = (math.sin(time*6)*player_vel/4)*multiplier
-                        local wag_y = (math.sin(time*3)*2*player_vel/4)*multiplier
-                        guns3d.data[playername].wag_offset[axis]=vector.new(wag_x, wag_y, 0)
-                    else
-                        for i, v in pairs(guns3d.data[playername].wag_offset[axis]) do
-                            if v > .08 then
-                                v = v/8
-                            else
-                                v = 0
-                            end
-                            guns3d.data[playername].wag_offset[axis][i] = v
-                        end
-                    end
-                end
-                --=================== aim interpolation/delay ==========
-                local wag = guns3d.data[playername].wag_offset
-                local sway = guns3d.data[playername].sway_offset
-                local recoil = guns3d.data[playername].recoil_offset
-                local look_rotation = vector.new(-player:get_look_vertical(), -player:get_look_horizontal(), 0)*180/math.pi
+                --=================== aim interpolation and other stuff ==========
+                local look_rotation = vector.new(player:get_look_vertical(), player:get_look_horizontal(), 0)*180/math.pi
                 local constant = 1
-                local next_vert_aim = ((guns3d.data[playername].vertical_aim-look_rotation.x)/(1+((constant*10)*dtime)))+look_rotation.x
+                local next_vert_aim = ((guns3d.data[playername].vertical_aim+look_rotation.x)/(1+((constant*10)*dtime)))-look_rotation.x
                 if math.abs(look_rotation.x-next_vert_aim) > .01 then
                     guns3d.data[playername].vertical_aim = next_vert_aim
                 else
                     guns3d.data[playername].vertical_aim = look_rotation.x
                 end
-                --print(dump2(attached_obj)
+                --make sure it doesnt go above or below a certain point
                 if math.abs(guns3d.data[playername].vertical_aim) > 76 then
                     local control_int = (guns3d.data[playername].vertical_aim/math.abs(guns3d.data[playername].vertical_aim))
                     guns3d.data[playername].vertical_aim = 76*control_int
                 end
                 local vertical_aim = guns3d.data[playername].vertical_aim
-                guns3d.data[playername].total_rotation = {gun_axial=(wag.gun_axial+recoil.gun_axial), look_axial=sway+wag.look_axial+recoil.look_axial}
-                --=================== bones and arms ===================
-                --rattle me booones
-                --bone stuff
+                --I love how fucked up minetest's look rotation is.
+                local difference = guns3d.data[playername].last_look-look_rotation
+                difference.x = -difference.x
+                deviation = deviation+difference/10
+                --deviation.x = -deviation.x
+                if vector.distance(guns3d.data[playername].last_look, look_rotation) == 0 then
+                    if vector.length(deviation) ~= 0 then
+                        deviation = deviation*.9
+                    end
+                end
+                if vector.length(deviation) > def.deviation_max then
+                    deviation = vector.normalize(deviation)*def.deviation_max
+                end
+                if vector.length(deviation) < .0005 then
+                    deviation = vector.new()
+                end
+                guns3d.data[playername].deviation_offset = deviation
+                --set total rotation
+                guns3d.data[playername].last_look = look_rotation
+                guns3d.data[playername].total_rotation = {
+                    gun_axial = deviation+sway.gun_axial+recoil.gun_axial+breathing.gun_axial+jump_offset.gun_axial+walking_offset.gun_axial,
+                    look_axial = sway.look_axial+recoil.look_axial+breathing.look_axial+jump_offset.look_axial+walking_offset.look_axial
+                }
 
-                --sway will eventually have to be look_axial
-                local total_rotation = guns3d.data[playername].total_rotation.look_axial
+                --=================== bones and arms ===================
+                local look_rotation = guns3d.data[playername].total_rotation.look_axial
+                local total_rotation = guns3d.data[playername].total_rotation.look_axial+guns3d.data[playername].total_rotation.gun_axial
                 local eye_pos = vector.new(0, player_properties.eye_height*10, 0)
 
-                --these have to be flopped 180 for offsets to work, despite the fact that it should actually be backwards... I'm not sure how minetest's rot works anymore
-                player:set_bone_position("guns3d_hipfire_bone", model_def.offsets.arm_right, vector.new(-(total_rotation.x+(vertical_aim*.75)), 180-total_rotation.y, 0))
-                player:set_bone_position("guns3d_aiming_bone", eye_pos, vector.new(vertical_aim+total_rotation.x, 180-total_rotation.y, 0))
+                --these have to be flipped 180 for offsets to work, despite the fact that it should actually be backwards... I'm not sure how minetest's rotation works anymore
+                player:set_bone_position("guns3d_hipfire_bone", model_def.offsets.arm_right, vector.new(-(look_rotation.x+(vertical_aim*.75)), 180-look_rotation.y, 0))
+                player:set_bone_position("guns3d_aiming_bone", eye_pos, vector.new(vertical_aim+look_rotation.x, 180-look_rotation.y, 0))
+                player:set_bone_position("guns3d_reticle_bone", eye_pos, vector.new(vertical_aim+total_rotation.x, 180-total_rotation.y, 0))
                 player:set_bone_position("guns3d_head", model_def.offsets.head, {x=vertical_aim,z=0,y=0})
                 --aim arms at user defined bones.
                 local left_dir, left_rot, left_length = guns3d.arm_dir_rotation(player, true)
@@ -558,8 +666,8 @@ minetest.register_globalstep(function(dtime)
                 player:set_bone_position("guns3d_arm_right", model_def.offsets.arm_right, vector.new(90,0,0)-right_rot)
                 player:set_bone_position("guns3d_arm_left", model_def.offsets.arm_left, vector.new(90,0,0)-left_rot)
                 guns3d.data[playername].last_controls = table.copy(player_controls)
-                guns3d.data[playername].attached_gun = attached_obj
-                --set total rotation
+                guns3d.data[playername].attached_gun = gun_obj
+                guns3d.data[playername].attached_reticle = reticle_obj
             end
         end
         --check if a gun is not being held anymore, or has been switched

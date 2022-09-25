@@ -9,34 +9,52 @@ player_api.register_model("holding_gun.b3d", {
     stepheight = 0.6,
     eye_height = 1.47,
 })
-minetest.register_entity("3dguns:reticle", {
+--probably should just make this a sprite
+minetest.register_entity("3dguns:generic_reticle", {
     initial_properties = {
         visual = "cube",
         visual_size = {x=.1, y=.1, z=0},
         textures = {"invisible.png", "invisible.png", "invisible.png", "invisible.png", "invisible.png", "invisible.png"},
         glow = 255,
         pointable = false,
-        static_save = false
+        static_save = false,
+        use_texture_alpha = true
     },
     on_step = function(self, dtime)
+        local playername = self.parent_player
+        local player = minetest.get_player_by_name(playername)
         local obj = self.object
-        if not obj:get_attach() then obj:remove() return end
-        local attached_luaent = obj:get_attach():get_luaentity()
-        if guns3d.data[attached_luaent.parent_player].held ~= string.gsub(attached_luaent.name, "_visual", "") then
-            obj:remove() return
-        end
-        --if obj == nil or obj:get_pos() == nil then return end
         local properties = obj:get_properties()
-        for i, v in pairs(properties.visual_size) do
-            if i ~= "z" and v ~= self.image_size then
-                properties.visual_size[i] = self.image_size
+        local held_stack = player:get_wielded_item()
+        if held_stack:get_name()==self.gun_name then
+            local def = guns3d.get_gun_def(player, held_stack)
+            local opacity = 255
+            local deviation = math.sqrt(math.abs(guns3d.data[playername].total_rotation.gun_axial.x^2)+math.abs(guns3d.data[playername].total_rotation.gun_axial.y^2))
+            if (def.reticle.fade_start_angle and deviation >= def.reticle.fade_start_angle) then
+                local start_ang = def.reticle.fade_start_angle
+                local end_ang = def.reticle.fade_end_angle
+                if guns3d.data[playername].ads_location == 1 then
+                    opacity = 255-((deviation-start_ang)/(end_ang-start_ang))*255
+                end
             end
+            if guns3d.data[playername].ads_location ~= 1 then
+                if guns3d.data[playername].ads_location > .9 and guns3d.data[playername].ads then
+                    opacity = ((guns3d.data[playername].ads_location-.9)/.1)*255
+                else
+                    opacity = 0
+                end
+            end
+            properties.visual_size = vector.new(def.reticle.size, def.reticle.size, 0)/10
+            if properties.textures[6] ~= def.reticle.texture then
+                properties.textures[6] = def.reticle.texture.."^[opacity:"..tostring(opacity)
+            end
+            --minetest.chat_send_all(dump(def.reticle.texture))
+            --I really dont need to set this every step
+            --change post-release for perfomance
+            obj:set_properties(properties)
+        else
+            obj:remove()
         end
-        if properties.textures[6] ~= self.image then
-            properties.textures[6] = self.image
-            properties.textures[5] = self.image
-        end
-        obj:set_properties(properties)
     end
 })
 minetest.register_entity("3dguns:tracer", {
@@ -44,7 +62,7 @@ minetest.register_entity("3dguns:tracer", {
         visual = "cube",
         visual_size = {x=.04, y=.04, z=15},
         textures = {"white.png", "white.png", "white.png", "white.png", "white.png", "white.png"},
-        glow = 255,
+        glow = 14,
         pointable = false,
         static_save = false
     },
@@ -107,10 +125,18 @@ minetest.register_entity("3dguns:bullet_hole", {
     },
     on_step = function(self, dtime)
         if not self.timer then
-            self.timer = 200
+            self.timer = 120
         else
             self.timer = self.timer - dtime
         end
+        if not self.block_name then
+            self.block_name = minetest.get_node(self.block_pos).name
+        elseif self.block_name ~= minetest.get_node(self.block_pos).name then
+            self.object:set_detach()
+            self.object:remove()
+            return
+        end
+        minetest.chat_send_all(dump(self.block_pos))
         local properties = self.object:get_properties()
         local timer = (self.timer-160)/40
         if timer > 0 then
