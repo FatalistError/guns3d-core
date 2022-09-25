@@ -1,4 +1,6 @@
 
+NOT FINISHED!
+
 for your convenience the documentation is split into two maintain sections.
 one part is for the basic and built-in use of the API
 the other is the internal functions and workings of the mod.
@@ -9,8 +11,10 @@ The second section exists for advanced users seeking to create more advanced gam
 using built-in support.
 
 API
+    Gun definition
+        definition used by `guns3d
+
 
 
 
 INTERNAL FORMAT
-    nessecary
