@@ -15,7 +15,6 @@ dofile(mp .. "/function.lua")
 dofile(mp .. "/register.lua")
 dofile(mp .. "/api.lua")
 dofile(mp .. "/guns.lua")
-
 --[[
 ***WARNING***
 This code may contain graphic content: such as workarounds that make no sense and create paradoxal loops,
@@ -52,9 +51,10 @@ minetest.register_globalstep(function(dtime)
                 local player_controls = player:get_player_control()
                 local def = guns3d.get_gun_def(player, player:get_wielded_item())
                 local model_def, model_name = guns3d.get_model_def_name(player)
+                local id = meta:get_string("id")
                 --this will break if a gun is placed into hand!
                 --YOUR RAM IS MINE MORTAL
-                if guns3d.data[playername].last_wield_index ~= player:get_wield_index() then
+                if guns3d.data[playername].last_gun_id ~= id then
                     --timers go brrr
                     guns3d.data[playername].current_anim = "rest"
                     guns3d.data[playername].anim_state = 0
@@ -106,7 +106,6 @@ minetest.register_globalstep(function(dtime)
                         ammo_table = {bullets={}, magazine="", loaded_bullet="", total_bullets=0}
                         meta:set_string("ammo", minetest.serialize(ammo_table))
                         meta:set_int("state", 1)
-                        player:set_wielded_item(held_stack)
                     end
                     if (ammo_table.magazine ~= "" or def.ammo_type ~= "magazine") and ammo_table.total_bullets > 0 then
                         local animation = {{
@@ -121,11 +120,15 @@ minetest.register_globalstep(function(dtime)
                     if minetest.get_modpath("player_api") then
                         player_api.set_model(player, model_name)
                     end
+                    if id == "" then
+                        id = tostring(math.random())
+                        meta:set_string("id", id)
+                        minetest.chat_send_all(dump(id))
+                    end
+                    player:set_wielded_item(held_stack)
                     player_properties.mesh = model_name
                 end
-
                 --account for model changes here by checking every step if its different
-                guns3d.data[playername].last_wield_index = player:get_wield_index()
                 guns3d.data[playername].last_held_gun = gunname
                 --delete bullet holes
                 if guns3d.bullethole_deletion_queue then
@@ -137,6 +140,7 @@ minetest.register_globalstep(function(dtime)
                         end
                     end
                 end
+                guns3d.data[playername].last_gun_id = id
                 local sway = guns3d.data[playername].sway_offset
                 local sway_vel = guns3d.data[playername].sway_vel
                 local recoil = guns3d.data[playername].recoil_offset
@@ -671,7 +675,7 @@ minetest.register_globalstep(function(dtime)
             end
         end
         --check if a gun is not being held anymore, or has been switched
-        if not guns3d.data[playername].is_holding or guns3d.data[playername].last_wield_index ~= player:get_wield_index() then
+        if not guns3d.data[playername].is_holding then
             local player_properties = player:get_properties()
             local def = guns3d.guns[guns3d.data[playername].last_held_gun]
             if player_properties.mesh ~= guns3d.data[playername].player_model and guns3d.data[playername].player_model then
