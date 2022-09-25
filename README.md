@@ -26,3 +26,7 @@ Shift+e will switch fire modes
 z will unload and load magazines.
 the rest should be obvious.
 putting a gun into current hotbar index will probably crash.
+
+VERY IMPORTANT:
+you must have view bobbing off!
+there's no way around this.
