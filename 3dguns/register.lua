@@ -144,6 +144,9 @@ minetest.register_entity("3dguns:bullet_hole", {
             properties.textures[5] = 'bullet_hole_1.png^(bullet_hole_2.png^[opacity:129)'
         end
         self.object:set_properties(properties)
+        if guns3d.data[playername].animated then
+        else
+        end
         if self.timer < 0 then
             self.object:set_detach()
             self.object:remove()

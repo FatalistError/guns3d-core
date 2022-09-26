@@ -529,7 +529,7 @@ minetest.register_globalstep(function(dtime)
                             if i == "x" then
                                 multiplier = 2
                             end
-                            walking_offset[axis][i] = math.sin((time/2)*math.pi*multiplier)*def.walking_offset[axis][i]
+                            walking_offset[axis][i] = math.sin((time/1.6)*math.pi*multiplier)*def.walking_offset[axis][i]
                         else
                             local OGval = walking_offset[axis][i]
                             if math.abs(walking_offset[axis][i]) > .05 then
@@ -656,7 +656,6 @@ minetest.register_globalstep(function(dtime)
                 local look_rotation = guns3d.data[playername].total_rotation.look_axial
                 local total_rotation = guns3d.data[playername].total_rotation.look_axial+guns3d.data[playername].total_rotation.gun_axial
                 local eye_pos = vector.new(0, player_properties.eye_height*10, 0)
-
                 --these have to be flipped 180 for offsets to work, despite the fact that it should actually be backwards... I'm not sure how minetest's rotation works anymore
                 player:set_bone_position("guns3d_hipfire_bone", model_def.offsets.arm_right, vector.new(-(look_rotation.x+(vertical_aim*.75)), 180-look_rotation.y, 0))
                 player:set_bone_position("guns3d_aiming_bone", eye_pos, vector.new(vertical_aim+look_rotation.x, 180-look_rotation.y, 0))

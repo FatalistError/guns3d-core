@@ -34,10 +34,6 @@ function guns3d.fire(player, def)
             guns3d.handle_recoil_effects(player, def)
             guns3d.handle_muzzle_fsx(player, def)
             guns3d.data[playername].time_since_last_fire = 0
-            if def.animation_frames.fire then
-                local anim_time = (def.animation_frames.fire.y-def.animation_frames.fire.x)/def.fire_anim_fps
-                guns3d.start_animation({{time = anim_time, frames = table.copy(def.animation_frames.fire)}}, player)
-            end
         end
     elseif ammo_table.total_bullets <= 0 then
         guns3d.data[playername].fire_queue = 0
@@ -48,16 +44,30 @@ end
 
 function guns3d.pull_trigger(active, controls_active, first_call, player, def)
     if active then
+        local old_rechamber_time = guns3d.data[playername].rechamber_time
+        local time = (def.animation_frames.fire.x-def.animation_frames.fire.y)*def.fire_anim_fps
         if not (guns3d.data[playername].last_controls.LMB) and def.firetype == "burst" then
             guns3d.data[playername].fire_queue = def.burst_fire
         end
-        if (not guns3d.data[playername].last_controls.LMB or not player:get_player_control().LMB) and def.firetype == "semi-automatic" then
-            guns3d.fire(player, def)
+        if (not guns3d.data[playername].last_controls.LMB or not player:get_player_control().LMB) and def.firetype == "semi-automatic" or def.fire_type == "bolt-action" then
+            if guns3d.data[player:get_player_name()].rechamber_time <= 0 then
+                guns3d.fire(player, def)
+            end
         end
         if def.firetype == "automatic" then
             if guns3d.data[player:get_player_name()].rechamber_time <= 0 then
                 guns3d.fire(player, def)
             end
+        end
+        if def.fire_anim_sync then
+            time = 60/def.firerate
+        end
+        if old_rechamber_time <= 0 then
+            local animation = {{
+                time = time,
+                frames = table.copy(def.animation_frames.fire)
+            }}
+            guns3d.start_animation(animation, player)
         end
         --ADD API FOR DIFFERENT FIRETYPES HERE
     end

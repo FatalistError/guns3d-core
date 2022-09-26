@@ -151,6 +151,13 @@ function guns3d.handle_muzzle_fsx(player, def)
     })
 end
 --rename to "handle_recoil_fsx" for consistency
+function guns3d.ordered_rotation(rotation)
+    local new_dir = vector.new(0,0,1)
+    new_dir = vector.rotate(new_dir, vector.new(rotation.x,0,0))
+    new_dir = vector.rotate(new_dir, vector.new(0,rotation.y,0))
+    new_dir = vector.rotate(new_dir, vector.new(0,0,rotation.z))
+    return vector.dir_to_rotation(new_dir)
+end
 function guns3d.handle_recoil_effects(player, def)
     for _, i in pairs({"x", "y"}) do
         local multiplier = math.random()
@@ -277,7 +284,7 @@ function guns3d.gun_dir_pos(player, added_pos, relative_to_player)
 
     local player_horizontal = player:get_look_horizontal()
     if relative_to_player then player_horizontal = 0 end
-    local player_rotation = vector.new(-player:get_look_vertical(), player_horizontal, 0)
+    local player_rotation = vector.new(guns3d.data[playername].vertical_aim*math.pi/180, player_horizontal, 0)
     if math.abs(player_rotation.x*180/math.pi) > 78 then
         player_rotation.x = player_rotation.x-((player_rotation.x/math.abs(player_rotation.x)*(math.abs(player_rotation.x)-(78*math.pi/180))))
     end

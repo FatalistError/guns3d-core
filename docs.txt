@@ -14,6 +14,13 @@ API
     Gun definition
         definition used by `guns3d
 
+        Reloading:
+                This table simply represents the order and actions involved in reloading
+                reload = {
+                    type = "magazine",
+                    {"unloaded", .8, "unload"},
+                    {"reloaded", 1, "load"},
+                },
 
 
 
