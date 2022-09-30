@@ -103,9 +103,6 @@ function guns3d.reload(active, controls_active, first_call, player, def)
                     end
                 end
             end
-            if def.reload[next_state][1] == "chambered" then
-                play_anim = true
-            end
             if def.reload[next_state][1] == "unloaded" then
                 play_anim = true
             end
@@ -145,18 +142,12 @@ function guns3d.reload(active, controls_active, first_call, player, def)
                         end
                     end
                     if magstack then
-                        minetest.chat_send_all("magstack not nil")
                         ammo_table = minetest.deserialize(magstack:get_meta():get_string("ammo"))
                         inv:set_stack("main", index, "")
                         player:set_wielded_item(held_stack)
                         state = next_state
                     end
                 end
-                state_changed = true
-            end
-            --I may end up just getting rid of this bc of it causing animations to get... reeeeal wonky.
-            if def.reload[next_state][1] == "chambered" and not state_changed then
-                state = next_state
                 state_changed = true
             end
             if def.reload[next_state][1] == "unloaded" and not state_changed then
@@ -220,16 +211,17 @@ end
 local default_gun_def = {
     description = "NO DESCRIPTION",
 
-    recoil_vel = {x=0, y=0},
-    axial_recoil_vel = {x=0, y=0},
-    recoil = {x=0, y=0},
-    recoil_correction = 1,
+    recoil_vel = {gun_axial=vector.new(), look_axial=vector.new()},
+    recoil = {gun_axial=vector.new(), look_axial=vector.new()},
+    recoil_correction = {gun_axial=0, look_axial=0},
     recoil_reduction = 1,
     max_recoil_correction = 100,
+    sway_vel = {look_axial=0, gun_axial=0},
+    sway_maax = {look_axial=0, gun_axial=0},
+    breathing_offset = {look_axial=.2, gun_axial=0},
 
     offset = vector.new(),
     ads_offset = vector.new(),
-    bone_offset = vector.new(),
     flash_offset = vector.new(),
 
     vertical_rotation_offset = -6,
@@ -249,10 +241,15 @@ local default_gun_def = {
     firerate = 0,
     burst_fire = 0,
     chamber_time = 0,
-    load_time = 0,
-    unloaded_time = 0,
-    range = 0,
     pellets = 1,
+    reload = {
+        type = "magazine",
+        {"unloaded", .5, "unload"},
+        {"reloaded", .5, "load"},
+    },
+    bullet = {
+
+    },
 
     reticle_obj = "3dguns:generic_reticle",
 
@@ -260,7 +257,7 @@ local default_gun_def = {
     fire_modes = {"semi-automatic"},
     controls = {
         --reload time is arbitrary, it needs time to modify its own table.
-        reload = {keys={"zoom"}, loop=true, timer=1},
+        reload = {keys={"zoom"}, loop=true, timer=100},
         change_fire_mode = {keys={"zoom", "sneak"}, loop=false, timer=0, ignore_other_cntrls=false, ignore_lock=true},
         fire = {keys={"LMB"}, loop=true, timer=0},
         aim = {keys={"RMB"}, loop=false, timer=0, ignore_lock=true}
@@ -470,7 +467,16 @@ end
 --gun def
 function guns3d.register_bullet(name, def)
     --sanitize definition
-    print("\n GUNS3d: beginning definition registration checks for bullet: "..name.."\n")
+    --print("\n GUNS3d: beginning definition registration checks for bullet: "..name.."\n")
+    if not minetest.registered_items[name] then
+        minetest.register_craftitem(name, {
+            groups = {["ammunition"] = 1},
+            inventory_image = def.texture,
+            description = def.description,
+        })
+    end
+    def.description = nil
+    def.texture = nil
     for index, value in pairs(default_bullet_def) do
         local initialized
         if not def[index] then
@@ -478,10 +484,10 @@ function guns3d.register_bullet(name, def)
             initialized = true
         end
         if initialized then
-            print("     "..index.." = ".. tostring(value))
+            print(name.."     "..index.." = ".. tostring(value))
         end
     end
-    print("\n registration checks \"".. name.. "\" end \n")
+    --print("\n registration checks \"".. name.. "\" end \n")
     guns3d.bullets[name] = def
 end
 function guns3d.get_gun_def(player, itemstack, name)
@@ -503,7 +509,11 @@ function guns3d.get_gun_def(player, itemstack, name)
         end
     end
     if ammo_table and ammo_table.total_bullets >= 1 then
-        for i, v in pairs(default_bullet_def) do
+        local loaded_bullet_def = guns3d.bullets[ammo_table.loaded_bullet]
+        if not loaded_bullet_def then
+            loaded_bullet_def = default_bullet_def
+        end
+        for i, v in pairs(loaded_bullet_def) do
             local gun_value = def.bullet[i]
             local current_value = v
             if def.bullet[i] then
@@ -518,7 +528,7 @@ function guns3d.get_gun_def(player, itemstack, name)
                     def.bullet[i]=gun_value[2]
                 end
             else
-                def.bullet[i] = default_bullet_def[i]
+                def.bullet[i] = loaded_bullet_def[i]
             end
         end
     else

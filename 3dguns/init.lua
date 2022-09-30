@@ -123,7 +123,6 @@ minetest.register_globalstep(function(dtime)
                     if id == "" then
                         id = tostring(math.random())
                         meta:set_string("id", id)
-                        minetest.chat_send_all(dump(id))
                     end
                     player:set_wielded_item(held_stack)
                     player_properties.mesh = model_name
@@ -470,6 +469,7 @@ minetest.register_globalstep(function(dtime)
                         })
                         player:hud_change(guns3d.hud_id[playername].loaded_bullet_acr, "text", def.bullet.acronym)
                     end
+                    --minetest.chat_send_all(dump(def.bullet))
                 else
                     if guns3d.hud_id[playername].loaded_bullet_img then
                         player:hud_change(guns3d.hud_id[playername].loaded_bullet_img, "text", "")

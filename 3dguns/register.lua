@@ -44,13 +44,35 @@ minetest.register_entity("3dguns:generic_reticle", {
                     opacity = 0
                 end
             end
-            properties.visual_size = vector.new(def.reticle.size, def.reticle.size, 0)/10
-            if properties.textures[6] ~= def.reticle.texture then
-                properties.textures[6] = def.reticle.texture.."^[opacity:"..tostring(opacity)
+            if self.opacity_lock == nil then
+                self.opacity_lock = false
             end
-            --minetest.chat_send_all(dump(def.reticle.texture))
+            if self.opacity_lock then
+                opacity = 0
+            end
             --I really dont need to set this every step
             --change post-release for perfomance
+            properties.textures[6] = def.reticle.texture
+            if (guns3d.data[playername].current_animation_frame ~= def.animation_frames.loaded.x) and (guns3d.data[playername].current_animation_frame ~= def.animation_frames.unloaded.x) then
+                if properties.visual_size.x <= def.reticle.attached_size/10+.08 and properties.visual_size.x >= def.reticle.attached_size/10-.08 then
+                    obj:set_attach(guns3d.data[playername].attached_gun, def.reticle.bone, vector.new(), vector.new(), true)
+                    self.opacity_lock = false
+                else
+                    self.opacity_lock = true
+                    opacity = 0
+                end
+                properties.visual_size = vector.new(def.reticle.attached_size, def.reticle.attached_size, 0)/10
+            else
+                if properties.visual_size.x <= def.reticle.size/10+.08 and properties.visual_size.x >= def.reticle.size/10-.08 then
+                    obj:set_attach(player, "guns3d_reticle_bone", {x=def.ads_look_offset,y=0,z=def.offset.z+def.reticle.offset}, nil, true)
+                    self.opacity_lock = false
+                else
+                    self.opacity_lock = true
+                    opacity = 0
+                end
+                properties.visual_size = vector.new(def.reticle.size, def.reticle.size, 0)/10
+            end
+            properties.textures[6] = def.reticle.texture.."^[opacity:"..tostring(opacity)
             obj:set_properties(properties)
         else
             obj:remove()
@@ -79,40 +101,6 @@ minetest.register_entity("3dguns:tracer", {
         obj:set_properties(properties)
     end
 })
-minetest.register_entity("3dguns:arms", {
-    initial_properties = {
-        visual = "mesh",
-        --mesh = "arms.b3d",
-        textures = {"character.png"},
-        glow = 0,
-        pointable = false,
-        static_save = false,
-    },
-    on_step = function(self, dtime)
-        local obj = self.object
-        local player = obj:get_attach()
-        local playername = player:get_player_name()
-        if obj:get_attach() ~= nil and not guns3d.data[playername].is_holding then
-            self.object:remove()
-            return
-        end
-        local def = guns3d.guns[guns3d.data[playername].last_held_gun]
-        local new_textures = obj:get_attach():get_properties().textures
-        local properties = obj:get_properties()
-
-        if def.arm_mesh and properties.mesh ~= def.arm_mesh then
-            properties.mesh = def.arm_mesh
-        else
-            properties.mesh = guns3d.data[playername].default_arm_mesh
-        end
-
-        if properties.textures ~= new_textures then
-            properties.textures = new_textures
-        end
-        obj:set_properties(properties)
-    end
-})
-
 
 minetest.register_entity("3dguns:bullet_hole", {
     initial_properties = {
@@ -136,7 +124,6 @@ minetest.register_entity("3dguns:bullet_hole", {
             self.object:remove()
             return
         end
-        minetest.chat_send_all(dump(self.block_pos))
         local properties = self.object:get_properties()
         local timer = (self.timer-160)/40
         if timer > 0 then
