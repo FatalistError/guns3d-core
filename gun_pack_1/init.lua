@@ -28,7 +28,7 @@ guns3d.register_gun("gun_pack_1:m4a1", {
     recoil_vel = {look_axial={x=.3, y=.2}, gun_axial={x=.08, y=.05}}, --the velocity that will be added when the gun is fired
     recoil_correction = {look_axial = 2, gun_axial = 60}, --the speed at which the recoil offset is corrected, this isnt actually in degrees- as that'd be impossible based on the system
     max_recoil_correction = 6, --the maximum speed (in degrees) at which the recoil, this needs to be replaced with a table for look and gun axial.
-    sway_vel = {look_axial=.2, gun_axial=.1}, --the velocity the gun will drift away from center aim (this doesn't effect non-sway offsets)
+    sway_vel = {look_axial=.2, gun_axial=.3}, --the velocity the gun will drift away from center aim (this doesn't effect non-sway offsets)
     sway_max = {look_axial=.8 , gun_axial=.05}, --the maximum angle that the gun will drift to before changing velocity
     breathing_offset = {look_axial=.1, gun_axial=0}, --the multiplier for the vertical sine pattern that's offset (this will later be affected by stamina)
     jump_offset = {gun_axial=vector.new(-1, 1, 0), look_axial=vector.new(-1, 1, 0)}, --the offset that the gun will transistion to when jumping/in air
@@ -44,6 +44,7 @@ guns3d.register_gun("gun_pack_1:m4a1", {
     mesh = "m4a1.b3d", --the mesh to be used
     attachment_mesh = "m4a1_naked.b3d", --unimplemented feature
     texture = "cz527.png",  --the texture? (????)
+    inventory_image = "m4a1.png",
     firerate = 850, --the RPM of the gun
     fire_modes = {"burst", "automatic", "semi-automatic"}, --the firemodes the gun has
     burst_fire = 3, --the amount of rounds in a "burst" (aka burst firemode)
@@ -91,6 +92,7 @@ guns3d.register_gun("gun_pack_1:m4a1", {
         fire_mode = {sound="fire_mode", distance=10}
     }
 })
+--DOC PEOPLE, LOOK HERE!
 guns3d.register_gun("gun_pack_1:awm", {
     description = "AWM sniper rifle",
     recoil_vel = {look_axial={x=.3, y=.5}, gun_axial={x=.1, y=.1}}, --the velocity that will be added when the gun is fired
@@ -100,7 +102,7 @@ guns3d.register_gun("gun_pack_1:awm", {
     sway_max = {look_axial=.2 , gun_axial=.3}, --the maximum angle that the gun will drift to before changing velocity
     breathing_offset = {look_axial=.01, gun_axial=.05}, --the multiplier for the vertical sine pattern that's offset (this will later be affected by stamina)
     jump_offset = {gun_axial=vector.new(-1, 1, 0), look_axial=vector.new(-1, 1, 0)}, --the offset that the gun will transistion to when jumping/in air
-    walking_offset = {gun_axial=vector.new(.2, -.2, 0), look_axial=vector.new(1, 1, 0)}, --the multiplier for figure-8 pattern offset when walking
+    walking_offset = {gun_axial=vector.new(.5, -.5, 0), look_axial=vector.new(1, 1, 0)}, --the multiplier for figure-8 pattern offset when walking
     deviation_max = .1, --max amount of "deviation" this basically just makes the gun's axial rotation lag behidn the actual look rotation a bit, I dont reccomend putting it too high, its a bit messy.
     ads_zoom_mp = 6, --the amount of zoom
     ads_look_offset = .7, --the horizontal offset of the gun
@@ -111,22 +113,23 @@ guns3d.register_gun("gun_pack_1:awm", {
     offset = {x=-1.3, z=1.2, y=1}, -- the offset when in hipfire
     mesh = "awm.b3d", --the mesh to be used
     texture = "cz527.png",  --the texture? (????)
+    inventory_image = "awm.png",
     firerate = 75, --the RPM of the gun
-    fire_modes = {"semi-automatic"}, --the firemodes the gun has
-    fire_anim_sync = true,
+    fire_modes = {"bolt-action"}, --the firemodes the gun has, if not "burst" or "automatic", it simply is cosmetic, and will act as a semi
+    fire_anim_sync = true, --syncs the firing animation to the rate of fire, used to make bolt action rifles
     burst_fire = 3, --the amount of rounds in a "burst" (aka burst firemode)
     flash_offset = {x=0, y=-.86, z=12.3}, --the location of the muzzle flash and other bullet effects
     reticle = { --this is a system that allows reticles that match the full rotation of the gun
-        size = .6, --the size of the entity
+        size = .55, --the size of the entity
         texture = "scope.png", --the texture
         offset = 6, --the offset (not that this can only be on the "z" axis, thus it's a int)
-        fade_start_angle = .5, --the gun_axial offset value in which the gun will begin fading in accordance with fade_end_angle
-        fade_end_angle = .45, --the gun_axial offset value that the gun will be at when it becomes fully transparent
+        fade_start_angle = .6, --the gun_axial offset value in which the gun will begin fading in accordance with fade_end_angle
+        fade_end_angle = 1.4, --the gun_axial offset value that the gun will be at when it becomes fully transparent
         bone = "Reticle", --the bone that the gun will connect to only when animated
-        attached_size = .6,
+        attached_size = .55, --the size of the entity when attached to a gun (i.e. during animations), if this is not the same as reticle.size, it will be invisible for a step or two during transition.
     },
     reload = {
-        type = "magazine",
+        type = "magazine",  --DOC PEOPLE, IGNORE THIS DEF (its unfinished)
         {"unloaded", .8, "unload"},
         {"reloaded", 1, "load"},
     },
@@ -137,7 +140,7 @@ guns3d.register_gun("gun_pack_1:awm", {
         unload = {x=2, y=80},
         load = {x=81, y=130},
         rechamber = {x=81, y=130},
-        fire = {x=130, y=175}, --"fade reticle" isnt implemented yet.
+        fire = {x=130, y=175},
         fire_mode = {x=2, y=80},
         unloaded = {x=0, y=0},
         loaded = {x=1, y=1}

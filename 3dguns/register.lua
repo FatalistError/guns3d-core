@@ -76,6 +76,7 @@ minetest.register_entity("3dguns:generic_reticle", {
             obj:set_properties(properties)
         else
             obj:remove()
+            guns3d.data[playername].attached_reticle = nil
         end
     end
 })
@@ -141,45 +142,3 @@ minetest.register_entity("3dguns:bullet_hole", {
         end
     end
 })
-minetest.register_entity("3dguns:flash_entity", {
-    initial_properties = {
-        glow = 100,
-        visual = "sprite",
-        textures = {"flash.png"}, --assign the same texture as skin on creation
-        pointable = false,
-        static_save = false,
-        use_texture_alpha = true,
-    },
-    on_step = function(self, dtime)
-        if not self.timer then
-            self.timer = .1
-        else
-            self.timer = self.timer - dtime
-        end
-        local properties = self.object:get_properties()
-        if self.timer > .1 then
-            properties.visual_size = vector.multiply(properties.visual_size, 1.2)
-        else
-            properties.visual_size = vector.multiply(properties.visual_size, .8)
-        end
-        self.object:set_properties(properties)
-        if self.timer < 0 then
-            self.object:set_detach()
-            self.object:remove()
-            return
-        end
-    end
-})
-minetest.register_on_joinplayer(function(player)
-    playername = player:get_player_name()
-    guns3d.hud_id[playername] = {}
-    guns3d.data[playername] = {}
-    guns3d.data[playername].rechamber_time = 0
-    guns3d.data[playername].last_held_gun = ""
-    guns3d.data[playername].held = player:get_wielded_item():get_name()
-    guns3d.data[playername].sway_vel = vector.new()
-    guns3d.data[playername].sway_offset = vector.new()
-    guns3d.data[playername].recoil_vel = vector.new()
-    guns3d.data[playername].recoil_offset = vector.new()
-    guns3d.data[playername].ads = false
-end)

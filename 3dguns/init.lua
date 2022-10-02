@@ -26,6 +26,13 @@ read at your own risk.
 --bullet.pen_nodes = {node=ngtv_velocity, etc, etc}
 --bullet.max_node_pen = number, how many blocks can penetrate
 --bullet.pen_deviation = number, in degrees to randomly rotate after penetration
+minetest.register_on_joinplayer(function(player)
+    playername = player:get_player_name()
+    guns3d.hud_id[playername] = {}
+    guns3d.data[playername] = {}
+    guns3d.data[playername].player_model = player:get_properties().mesh
+    print(dump(guns3d.data[playername].player_model))
+end)
 ----=============== GLOBALSTEP ======================
 minetest.register_globalstep(function(dtime)
     guns3d.last_dtime = dtime
@@ -36,26 +43,27 @@ minetest.register_globalstep(function(dtime)
         local playername = player:get_player_name()
         local held_stack = player:get_wielded_item()
         local held = held_stack:get_name()
-        guns3d.data[playername].is_holding = false
+        local data_table_init
+        local holding_gun
+        local id
         for gunname, _ in pairs(guns3d.guns) do
             if held == gunname then
-                guns3d.data[playername].is_holding = true
+                holding_gun = true
                 local player_properties = player:get_properties()
-
                 local gun_obj = guns3d.data[playername].attached_gun
                 local reticle_obj = guns3d.data[playername].attached_reticle
-
                 local meta = held_stack:get_meta()
                 local ammo_table = minetest.deserialize(meta:get_string("ammo"))
-
                 local player_controls = player:get_player_control()
                 local def = guns3d.get_gun_def(player, player:get_wielded_item())
                 local model_def, model_name = guns3d.get_model_def_name(player)
-                local id = meta:get_string("id")
+                id = meta:get_string("id")
                 --this will break if a gun is placed into hand!
                 --YOUR RAM IS MINE MORTAL
-                if guns3d.data[playername].last_gun_id ~= id then
+                if guns3d.data[playername].last_gun_id ~= id or not guns3d.data[playername].last_gun_id then
                     --timers go brrr
+                    minetest.chat_send_all("data init")
+                    guns3d.data[playername].last_gun_id = id
                     guns3d.data[playername].current_anim = "rest"
                     guns3d.data[playername].anim_state = 0
                     guns3d.data[playername].ads_location = 0
@@ -114,9 +122,6 @@ minetest.register_globalstep(function(dtime)
                         }}
                         guns3d.start_animation(animation, player)
                     end
-
-                    --some model stuff
-                    guns3d.data[playername].player_model = player:get_properties().mesh
                     if minetest.get_modpath("player_api") then
                         player_api.set_model(player, model_name)
                     end
@@ -139,7 +144,6 @@ minetest.register_globalstep(function(dtime)
                         end
                     end
                 end
-                guns3d.data[playername].last_gun_id = id
                 local sway = guns3d.data[playername].sway_offset
                 local sway_vel = guns3d.data[playername].sway_vel
                 local recoil = guns3d.data[playername].recoil_offset
@@ -674,34 +678,39 @@ minetest.register_globalstep(function(dtime)
             end
         end
         --check if a gun is not being held anymore, or has been switched
-        if not guns3d.data[playername].is_holding then
+        last_wield = player:get_wield_index()
+        --because after this id will be nil
+        if not holding_gun then
             local player_properties = player:get_properties()
-            local def = guns3d.guns[guns3d.data[playername].last_held_gun]
-            if player_properties.mesh ~= guns3d.data[playername].player_model and guns3d.data[playername].player_model then
-                if minetest.get_modpath("player_api") then
-                    player_api.set_model(player, guns3d.data[playername].player_model)
+            if guns3d.data[playername].last_gun_id ~= id then
+                local def = guns3d.guns[guns3d.data[playername].last_held_gun]
+                minetest.chat_send_all(dump(guns3d.data[playername].player_model))
+                if player_properties.mesh ~= guns3d.data[playername].player_model and guns3d.data[playername].player_model then
+                    if minetest.get_modpath("player_api") then
+                        player_api.set_model(player, guns3d.data[playername].player_model)
+                    end
+                    player_properties.mesh = guns3d.data[playername].player_model
+                    player:set_properties(player_properties)
                 end
-                player_properties.mesh = guns3d.data[playername].player_model
-                guns3d.data[playername].player_model = nil
-                player:set_properties(player_properties)
+                for name, hud_id in pairs(guns3d.hud_id[playername]) do
+                    player:hud_remove(hud_id)
+                    guns3d.hud_id[playername][name] = nil
+                end
+                player:hud_set_flags({wielditem = true})
+                --reset FOV
+                if guns3d.data[playername].ads == true then
+                    player:set_fov(0, false, def.ads_time/4)
+                    player:set_eye_offset(vector.new())
+                    guns3d.data[playername].ads = false
+                end
             end
-            for name, id in pairs(guns3d.hud_id[playername]) do
-                player:hud_remove(id)
-                guns3d.hud_id[playername][name] = nil
-            end
-            player:hud_set_flags({wielditem = true})
-            --reset FOV
-            if guns3d.data[playername].ads == true then
-                player:set_fov(0, false, def.ads_time/4)
-                player:set_eye_offset(vector.new())
-                guns3d.data[playername].ads = false
-            end
+            guns3d.data[playername].player_model = player_properties.mesh
             --================= unset (everything) ====================
             --basically just reset everything.
-            guns3d.data[playername] = {is_holding = false}
-        else
-            guns3d.data[playername].held = held
+            --guns3d.data[playername] = {}
         end
+        guns3d.data[playername].held = held
+        guns3d.data[playername].last_gun_id = id
     end
 end
 )

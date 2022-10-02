@@ -49,7 +49,7 @@ function guns3d.pull_trigger(active, controls_active, first_call, player, def)
         if not (guns3d.data[playername].last_controls.LMB) and def.firetype == "burst" then
             guns3d.data[playername].fire_queue = def.burst_fire
         end
-        if (not guns3d.data[playername].last_controls.LMB or not player:get_player_control().LMB) and def.firetype == "semi-automatic" or def.fire_type == "bolt-action" then
+        if (not guns3d.data[playername].last_controls.LMB or not player:get_player_control().LMB) and (def.firetype ~= "burst" and def.fire_type ~= "automatic") then
             if guns3d.data[player:get_player_name()].rechamber_time <= 0 then
                 guns3d.fire(player, def)
             end
@@ -303,7 +303,7 @@ function guns3d.register_gun(name, def)
     guns3d.guns[name] = def
     minetest.register_tool(name,{
         description = def.description,
-        inventory_image = def.image,
+        inventory_image = def.inventory_image,
         on_use = function(itemstack, player)
             --why
         end,
@@ -334,6 +334,7 @@ function guns3d.register_gun(name, def)
             local held = guns3d.data[playername].held
             if obj:get_attach() == nil or name ~= held then
                 obj:remove()
+                guns3d.data[playername].attached_gun = nil
                 return
             elseif name == held then
                 --obj:set_rotation(guns3d.data[playername].visual_offset.rotation)
