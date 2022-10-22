@@ -26,7 +26,7 @@ minetest.register_entity("3dguns:generic_reticle", {
         local obj = self.object
         local properties = obj:get_properties()
         local held_stack = player:get_wielded_item()
-        if held_stack:get_name()==self.gun_name then
+        if held_stack:get_name()==self.gun_name and guns3d.data[playername].attached_gun then
             local def = guns3d.get_gun_def(player, held_stack)
             local opacity = 255
             local deviation = math.sqrt(math.abs(guns3d.data[playername].total_rotation.gun_axial.x^2)+math.abs(guns3d.data[playername].total_rotation.gun_axial.y^2))
@@ -54,8 +54,10 @@ minetest.register_entity("3dguns:generic_reticle", {
             --change post-release for perfomance
             properties.textures[6] = def.reticle.texture
             if (guns3d.data[playername].current_animation_frame ~= def.animation_frames.loaded.x) and (guns3d.data[playername].current_animation_frame ~= def.animation_frames.unloaded.x) then
+                --I hate floats, I hate floats, I HATE FLOATS
+
                 if properties.visual_size.x <= def.reticle.attached_size/10+.08 and properties.visual_size.x >= def.reticle.attached_size/10-.08 then
-                    obj:set_attach(guns3d.data[playername].attached_gun, def.reticle.bone, vector.new(), vector.new(), true)
+                    obj:set_attach(guns3d.data[playername].attached_gun, def.reticle.bone, nil, nil, true)
                     self.opacity_lock = false
                 else
                     self.opacity_lock = true

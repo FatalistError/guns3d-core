@@ -229,7 +229,7 @@ function guns3d.end_current_animation(player)
     guns3d.data[playername].attached_gun:set_animation({x=0, y=0})
     guns3d.data[playername].animated = false
     guns3d.data[playername].animation_queue = {}
-    minetest.chat_send_all("animation_killed")
+    minetest.chat_send_all("anim stopped")
 end
 function guns3d.start_animation(animation_table, player)
     local playername = player:get_player_name()
@@ -512,7 +512,6 @@ function guns3d.ray(player, pos, dir, def, bullet_info)
     if block_ends_early or not pointed then
         bullet_info.state = "free"
     end
-    minetest.chat_send_all(penetration_loss)
     bullet_info.penetration_left=bullet_info.penetration_left-(penetration_loss*distance)
     bullet_info.range_left = bullet_info.range_left-distance
     bullet_info.last_pointed = pointed
@@ -524,7 +523,6 @@ function guns3d.ray(player, pos, dir, def, bullet_info)
         bullet_info.last_node = minetest.get_node(pointed.under).name
     end
 
-    minetest.chat_send_all("pen applied: "..dump(bullet_info.penetration_left))
     if bullet_info.range_left > 0.001 and bullet_info.penetration_left > 0 then
         guns3d.ray(player, next_ray_pos, new_dir, def, bullet_info)
     end

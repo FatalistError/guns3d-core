@@ -62,7 +62,7 @@ minetest.register_globalstep(function(dtime)
                 --YOUR RAM IS MINE MORTAL
                 if guns3d.data[playername].last_gun_id ~= id or not guns3d.data[playername].last_gun_id then
                     --timers go brrr
-                    minetest.chat_send_all("data init")
+                    guns3d.data[playername] = {}
                     guns3d.data[playername].last_gun_id = id
                     guns3d.data[playername].current_anim = "rest"
                     guns3d.data[playername].anim_state = 0
@@ -341,7 +341,6 @@ minetest.register_globalstep(function(dtime)
                         end
                         --if it doesn't loop, then it must
                         if (conditions_met and ((not ctrl_def.loop and not ctrl_data.active) or ctrl_def.loop)) or (not is_active and ctrl_data.active) or (((not is_active) and (not conditions_met)) and ctrl_data.conditions_met) then
-                            --minetest.chat_send_all("called")
                             local returns = def.control_callbacks[i](is_active, conditions_met, (conditions_met and not ctrl_data.conditions_met), player, def)
                             --this is sort of a hack, but it really shouldn't get in the way, it's so the "first call" variable can be true for loops
                             if conditions_met and is_active then
@@ -376,7 +375,6 @@ minetest.register_globalstep(function(dtime)
                 local timer = guns3d.data[playername].control_data.reload.timer
                 player:hud_set_flags({wielditem = false, crosshair = false})
                 --[[if timer < def.reload_time and timer >= 0 and not guns3d.data[playername].reload_locked then
-                    minetest.chat_send_all(timer)
                     if guns3d.hud_id[playername].reload_bar == nil then
                         guns3d.hud_id[playername].reload_bar = player:hud_add({
                             hud_elem_type = "statbar",
@@ -473,7 +471,6 @@ minetest.register_globalstep(function(dtime)
                         })
                         player:hud_change(guns3d.hud_id[playername].loaded_bullet_acr, "text", def.bullet.acronym)
                     end
-                    --minetest.chat_send_all(dump(def.bullet))
                 else
                     if guns3d.hud_id[playername].loaded_bullet_img then
                         player:hud_change(guns3d.hud_id[playername].loaded_bullet_img, "text", "")
@@ -634,19 +631,25 @@ minetest.register_globalstep(function(dtime)
                 local vertical_aim = guns3d.data[playername].vertical_aim
                 --I love how fucked up minetest's look rotation is.
                 local difference = guns3d.data[playername].last_look-look_rotation
-                difference.x = -difference.x
-                deviation = deviation+difference/10
+                difference.y = ((difference.y + 180) % 360) - 180
+                difference.x = -difference.x*5
+                deviation = deviation+(difference/100)
                 --deviation.x = -deviation.x
-                if vector.distance(guns3d.data[playername].last_look, look_rotation) == 0 then
-                    if vector.length(deviation) ~= 0 then
-                        deviation = deviation*.9
+                for i, v in pairs(deviation) do
+                    local ctrl_int = v/math.abs(v)
+                    if math.abs(v) > def.deviation_max then
+                        deviation[i] = def.deviation_max*ctrl_int
+                    else
+                        if math.abs(v) < .05 and not v==0 then
+                            deviation[i] = 0
+                        else
+                            if math.abs(v)-(2*dtime*(math.abs(v)/def.deviation_max)) > 0 then
+                                deviation[i] = v-(1*dtime*ctrl_int*(math.abs(v)/def.deviation_max))
+                            else
+                                deviation[i] = 0
+                            end
+                        end
                     end
-                end
-                if vector.length(deviation) > def.deviation_max then
-                    deviation = vector.normalize(deviation)*def.deviation_max
-                end
-                if vector.length(deviation) < .0005 then
-                    deviation = vector.new()
                 end
                 guns3d.data[playername].deviation_offset = deviation
                 --set total rotation
@@ -684,7 +687,6 @@ minetest.register_globalstep(function(dtime)
             local player_properties = player:get_properties()
             if guns3d.data[playername].last_gun_id ~= id then
                 local def = guns3d.guns[guns3d.data[playername].last_held_gun]
-                minetest.chat_send_all(dump(guns3d.data[playername].player_model))
                 if player_properties.mesh ~= guns3d.data[playername].player_model and guns3d.data[playername].player_model then
                     if minetest.get_modpath("player_api") then
                         player_api.set_model(player, guns3d.data[playername].player_model)
