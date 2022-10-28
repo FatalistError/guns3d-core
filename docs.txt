@@ -14,13 +14,21 @@ API
     Gun definition
         definition used by `guns3d
 
-        Reloading:
+        reload:
                 This table simply represents the order and actions involved in reloading
-                reload = {
-                    type = "magazine",
-                    {"unloaded", .8, "unload"},
-                    {"reloaded", 1, "load"},
-                },
+                example:
+                    reload = {
+                        type = "magazine",
+                        {"unloaded", .8, "unload"},
+                        {"reloaded", 1, "load"},
+                    },
+        recoil:
+        firerate:
+            integer: the rate (in RPM) in which the gun fires, you can find this by 60/(time in seconds)
+        fire_anim_sync:
+            bool: this specifies if the fire animation's length should match the time between firing, use this for bolt actions
+
+
 
 
 
