@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2022 FatalError42O
+Copyright (c) 2022 FatalError42O, Trevor P.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
