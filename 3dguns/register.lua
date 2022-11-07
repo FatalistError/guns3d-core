@@ -13,7 +13,7 @@ player_api.register_model("holding_gun.b3d", {
 minetest.register_entity("3dguns:generic_reticle", {
     initial_properties = {
         visual = "cube",
-        visual_size = {x=.1, y=.1, z=0},
+        visual_size = {x=0, y=0, z=0},
         textures = {"invisible.png", "invisible.png", "invisible.png", "invisible.png", "invisible.png", "invisible.png"},
         glow = 255,
         pointable = false,
@@ -38,8 +38,8 @@ minetest.register_entity("3dguns:generic_reticle", {
                 end
             end
             if guns3d.data[playername].ads_location ~= 1 then
-                if guns3d.data[playername].ads_location > .9 and guns3d.data[playername].ads then
-                    opacity = ((guns3d.data[playername].ads_location-.9)/.1)*255
+                if guns3d.data[playername].ads_location > .8 and guns3d.data[playername].ads then
+                    opacity = ((guns3d.data[playername].ads_location-.8)/.1)*255
                 else
                     opacity = 0
                 end
@@ -54,16 +54,25 @@ minetest.register_entity("3dguns:generic_reticle", {
             --change post-release for perfomance
             properties.textures[6] = def.reticle.texture
             if (guns3d.data[playername].current_animation_frame ~= def.animation_frames.loaded.x) and (guns3d.data[playername].current_animation_frame ~= def.animation_frames.unloaded.x) then
-                --I hate floats, I hate floats, I HATE FLOATS
-
-                if properties.visual_size.x <= def.reticle.attached_size/10+.08 and properties.visual_size.x >= def.reticle.attached_size/10-.08 then
-                    obj:set_attach(guns3d.data[playername].attached_gun, def.reticle.bone, nil, nil, true)
-                    self.opacity_lock = false
-                else
+                --ok: so
+                --if you have a reticle bone, it attaches during non-firing animations, if you want it to attach during firing animations then use fire_attach = true
+                --if you do not have a reticle bone, during non-firing animations it simply becomes invisible
+                local firing = ((guns3d.data[playername].current_animation_frame > def.animation_frames.fire.x) and (guns3d.data[playername].current_animation_frame < def.animation_frames.fire.y))
+                if def.reticle.bone then
+                    if (firing and def.reticle.fire_attach) or not firing then
+                        if properties.visual_size.x <= def.reticle.attached_size/10+.08 and properties.visual_size.x >= def.reticle.attached_size/10-.08 then
+                            obj:set_attach(guns3d.data[playername].attached_gun, def.reticle.bone, nil, nil, true)
+                            self.opacity_lock = false
+                        else
+                            self.opacity_lock = true
+                            opacity = 0
+                        end
+                        properties.visual_size = vector.new(def.reticle.attached_size, def.reticle.attached_size, 0)/10
+                    end
+                elseif not firing then
                     self.opacity_lock = true
                     opacity = 0
                 end
-                properties.visual_size = vector.new(def.reticle.attached_size, def.reticle.attached_size, 0)/10
             else
                 if properties.visual_size.x <= def.reticle.size/10+.08 and properties.visual_size.x >= def.reticle.size/10-.08 then
                     obj:set_attach(player, "guns3d_reticle_bone", {x=def.ads_look_offset,y=0,z=def.offset.z+def.reticle.offset}, nil, true)
@@ -134,9 +143,6 @@ minetest.register_entity("3dguns:bullet_hole", {
             properties.textures[5] = 'bullet_hole_1.png^(bullet_hole_2.png^[opacity:129)'
         end
         self.object:set_properties(properties)
-        if guns3d.data[playername].animated then
-        else
-        end
         if self.timer < 0 then
             self.object:set_detach()
             self.object:remove()

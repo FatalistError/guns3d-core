@@ -21,10 +21,12 @@ function table.compare(tbl1, tbl2)
 end
 --this function is designed for use in the main globalstep, and such uses many pre-existing variables within it to save resources.
 function set_gun_rest_animation(player, def, attached_obj)
+    local playername = player:get_player_name()
+    --minetest.chat_send_all(dump(guns3d.data[playername].animated))
     local ammo_table = minetest.deserialize(player:get_wielded_item():get_meta():get_string("ammo"))
     local current_anim, _, _, _ = attached_obj:get_animation()
-    if not guns3d.data[playername].animated then
-        if ammo_table.magazine == "" and def.reload.type == "magazine" then
+    if not guns3d.data[playername].animated and (guns3d.data[playername].rechamber_time > 60/def.firerate) then
+        if (ammo_table.magazine == "" and def.reload.type == "magazine") or (ammo_table.total_bullets == 0 and def.reload.type ~= "magazine") then
             attached_obj:set_animation(def.animation_frames.unloaded)
             guns3d.data[playername].current_animation_frame = def.animation_frames.unloaded.x
         else
@@ -46,6 +48,7 @@ local function interpolate(x, y, v)
     return returns
 end
 function guns3d.handle_muzzle_fsx(player, def)
+    local playername = player:get_player_name()
     if guns3d.data[playername].particle_spawners.muzzle_smoke and guns3d.data[playername].particle_spawners.muzzle_smoke ~= -1 then
         minetest.delete_particlespawner(guns3d.data[playername].particle_spawners.muzzle_smoke, player:get_player_name())
     end
@@ -159,6 +162,7 @@ function guns3d.ordered_rotation(rotation)
     return vector.dir_to_rotation(new_dir)
 end
 function guns3d.handle_recoil_effects(player, def)
+    local playername = player:get_player_name()
     for _, i in pairs({"x", "y"}) do
         local multiplier = math.random()
         if multiplier > .5 then multiplier = 1 else multiplier = -1 end
@@ -229,7 +233,6 @@ function guns3d.end_current_animation(player)
     guns3d.data[playername].attached_gun:set_animation({x=0, y=0})
     guns3d.data[playername].animated = false
     guns3d.data[playername].animation_queue = {}
-    minetest.chat_send_all("anim stopped")
 end
 function guns3d.start_animation(animation_table, player)
     local playername = player:get_player_name()
@@ -271,23 +274,17 @@ function guns3d.gun_dir_pos(player, added_pos, relative_to_player)
     local gun_offset = def.offset/10
 
     if guns3d.data[playername].ads then
-        gun_offset = ((def.ads_offset+vector.new(def.ads_look_offset,0,0))/10)
-        if guns3d.data[playername].ads_location == 1 or guns3d.data[playername].ads_location == 0 then
-            bone_location = vector.new(0, player_properties.eye_height, 0)
-        else
-            --ads interpolate would go here.
-            bone_location = (vector.new(0, player_properties.eye_height, 0))
-        end
+        gun_offset = def.ads_offset/10
+        bone_location = vector.new(0, player_properties.eye_height, 0)+player:get_eye_offset()/10
+    else
+        --minetest is really wacky.
+        bone_location = vector.new(-bone_location.x, bone_location.y, bone_location.z)
     end
     gun_offset = gun_offset+added_pos
-    bone_location = vector.new(-bone_location.x, bone_location.y, bone_location.z)
 
     local player_horizontal = player:get_look_horizontal()
     if relative_to_player then player_horizontal = 0 end
     local player_rotation = vector.new(guns3d.data[playername].vertical_aim*math.pi/180, player_horizontal, 0)
-    if math.abs(player_rotation.x*180/math.pi) > 78 then
-        player_rotation.x = player_rotation.x-((player_rotation.x/math.abs(player_rotation.x)*(math.abs(player_rotation.x)-(78*math.pi/180))))
-    end
 
     --dir needs to be rotated twice seperately to avoid weirdness
     local rotation = guns3d.data[playername].total_rotation
@@ -295,7 +292,6 @@ function guns3d.gun_dir_pos(player, added_pos, relative_to_player)
     dir = vector.rotate(dir, {y=((rotation.gun_axial.y+rotation.look_axial.y)*math.pi/180)+player_rotation.y, x=0, z=0})
 
     local local_pos = vector.rotate(bone_location, {x=0, y=player_horizontal, z=0})+vector.rotate(gun_offset, (rotation.look_axial*math.pi/180)+player_rotation)
-    local eye_offset = vector.rotate(player:get_eye_offset()/10, {x=0, y=player_horizontal, z=0})
 
     local hud_pos = local_pos+player:get_pos()
     if relative_to_player then
@@ -383,7 +379,7 @@ function guns3d.handle_node_hit_fx(normal, dir, pos, pointed)
     return false
 end
 function guns3d.tracer(player, start_pos, end_pos, def)
-    playername = player:get_player_name()
+    local playername = player:get_player_name()
     local offset = def.flash_offset
     local dir = vector.direction(start_pos, end_pos)
     local obj = minetest.add_entity(start_pos, "3dguns:tracer")
@@ -397,6 +393,7 @@ end
 --this is a complicated task, I've re-written it multiple times,
 --I've come to the conclusion that ultimately this will not be clean or pretty.
 function guns3d.ray(player, pos, dir, def, bullet_info)
+    local playername = player:get_player_name()
     local is_first_iter = false
     local constant = .7
     local normal
@@ -463,7 +460,7 @@ function guns3d.ray(player, pos, dir, def, bullet_info)
                 end
                 break
             end
-            --[[if p.type == "object" and p.ref ~= player then
+            if p.type == "object" and p.ref ~= player then
                 local next_penetration_val = bullet_info.penetration_left-def.bullet.penetration_dropoff_RHA*distance
                 if bullet_info.state == "transverse" then
                     mext_penetration_val = bullet_info.penetration_left-(distance*guns3d.node_properties[minetest.get_node(bullet_info.last_pointed.under).name].rha*1000)
@@ -475,10 +472,14 @@ function guns3d.ray(player, pos, dir, def, bullet_info)
                             bullet_info.penetration_left = next_penetration_val
                             penetration_val = bullet_info.penetration_left
                         end
-                        --damage player here with damage proportional to RHA penetration left
+                        local damage = math.floor((def.bullet.damage*(next_penetration_val/def.bullet.penetration_RHA))+1)
+                        p.ref:punch(player, 10000000, {damage_groups = {fleshy = damage}}, dir)
+                        if p.ref:is_player() then
+                            minetest.chat_send_all(dump(damage))
+                        end
                     end
                 end
-            end]]
+            end
         end
     end
     local distance = vector.distance(pos, next_ray_pos)

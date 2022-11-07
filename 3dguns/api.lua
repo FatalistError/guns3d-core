@@ -3,6 +3,7 @@
 
 function guns3d.fire(player, def)
     --do not call if it's semi, it will be called by on_use instead.
+    local playername = player:get_player_name()
     local held_stack = player:get_wielded_item()
     local meta = held_stack:get_meta()
     local ammo_table = minetest.deserialize(meta:get_string("ammo"))
@@ -54,6 +55,7 @@ function guns3d.fire(player, def)
 end
 
 function guns3d.pull_trigger(active, controls_active, first_call, player, def)
+    local playername = player:get_player_name()
     local itemstack = player:get_wielded_item()
     local ammo_table = minetest.deserialize(itemstack:get_meta():get_string("ammo"))
     if active then
@@ -96,20 +98,44 @@ function guns3d.reload(active, controls_active, first_call, player, def)
     --start animations here
     local anim = def.animation_frames[def.reload[next_state].anim_name]
     if not guns3d.data[playername].reload_locked then
+        local state_changed = false
         if first_call then
             timer = def.reload[next_state].time
             local play_anim = false
+            minetest.chat_send_all(dump(def.reload[next_state].state))
             if def.reload[next_state].state == "reloaded" then
                 for _, ammunition in pairs(def.ammunitions) do
                     for i = 1, inv:get_size("main") do
                         if inv:get_stack("main", i):get_name() == ammunition then
                             play_anim = true
+                            break
                         end
                     end
                 end
+                if def.reload.type == "flat" and ammo_table.total_bullets >= def.clip_size then
+                    play_anim = false
+                end
             end
             if def.reload[next_state].state == "unloaded" then
-                play_anim = true
+                --basically just change it's state if it's already unloaded.
+                --this will happen because it will become active immediately, meaning it will unload if possible (which it's not)
+                --this whole function is a mind-fuck.
+                if def.reload.type == "fractional" or def.reload.type == "flat" then
+                    if ammo_table.total_bullets > 0 then
+                        play_anim = true
+                    else
+                        state_changed = true
+                        timer = 0
+                    end
+                end
+                if def.reload.type == "magazine" then
+                    if ammo_table.magazine ~= "" then
+                        play_anim = true
+                    else
+                        state_changed = true
+                        timer = 0
+                    end
+                end
             end
             if anim and play_anim then
                 guns3d.end_current_animation(player)
@@ -120,14 +146,15 @@ function guns3d.reload(active, controls_active, first_call, player, def)
                 guns3d.start_animation(animation, player)
             end
         end
-        if active then
-            local state_changed = false
+        if active and not state_changed then
+            minetest.chat_send_all(dump(def.reload[next_state].state .. "active"))
             if type(def.reload[next_state].state) == "function" then
                 --call it with parameters?
             end
             if def.reload[next_state].state == "reloaded" and not state_changed then
-                guns3d.data[playername].reload_locked = true
+                minetest.chat_send_all("reload")
                 if def.reload.type == "magazine" then
+                    guns3d.data[playername].reload_locked = true
                     local mag_string, stack_index, magstack, index
                     local highest_ammo = 0
                     for _, ammunition in pairs(def.ammunitions) do
@@ -151,17 +178,78 @@ function guns3d.reload(active, controls_active, first_call, player, def)
                     if magstack then
                         ammo_table = minetest.deserialize(magstack:get_meta():get_string("ammo"))
                         inv:set_stack("main", index, "")
-                        player:set_wielded_item(held_stack)
                         state = next_state
+                        state_changed = true
                     end
                 end
-                --[[if def.reload.type == "fractional" then
+                if def.reload.type == "fractional" then
+                    if ammo_table.total_bullets < def.clip_size then
+                        local bullet
+                        for _, ammunition in pairs(def.ammunitions) do
+                            for i = 1, inv:get_size("main") do
+                                if inv:get_stack("main", i):get_name() == ammunition then
+                                    bullet = inv:get_stack("main", i):take_item(1)
+                                    if inv:get_stack("main", i) == 0 then
+                                        inv:set_stack("main", "")
+                                    end
+                                    break
+                                end
+                            end
+                        end
+                        if bullet and bullet:get_count() == 1 then
+                            if ammo_table.bullets[bullet:get_name()] then
+                                ammo_table.bullets[bullet:get_name()] = ammo_table.bullets[bullet:get_name()] + 1
+                            else
+                                ammo_table.bullets[bullet:get_name()] = 1
+                            end
+                            ammo_table.total_bullets = ammo_table.total_bullets + 1
+                            ammo_table.loaded_bullet = bullet:get_name()
+                        end
+                        if not bullet or ammo_table.total_bullets == def.clip_size then
+                            state_changed = true
+                            state = next_state
+                            guns3d.data[playername].reload_locked = true
+                        end
+                    else
+                        state_changed = true
+                        state = next_state
+                        guns3d.data[playername].reload_locked = true
+                    end
                 end
                 if def.reload.type == "flat" then
-                end]]
-                state_changed = true
+                    if ammo_table.total_bullets < def.clip_size then
+                        local inserted_ammo_table = {}
+                        local clip_remainder = def.clip_size-ammo_table.total_bullets
+                        for _, ammunition in pairs(def.ammunitions) do
+                            for i = 1, inv:get_size("main") do
+                                local stack = inv:get_stack("main", i)
+                                if stack:get_name() == ammunition then
+                                    local count = stack:get_count()
+                                    if (clip_remainder - count) >= 0 then
+                                        inserted_ammo_table[stack:get_name()] = count
+                                        inv:set_stack("main", i, "")
+                                        clip_remainder = clip_remainder - count
+                                    else
+                                        inserted_ammo_table[stack:get_name()] = clip_remainder
+                                        stack:set_count(count-clip_remainder)
+                                        inv:set_stack("main", i, stack)
+                                        clip_remainder = 0
+                                    end
+                                end
+                            end
+                        end
+                        ammo_table.total_bullets = def.clip_size - clip_remainder
+                        ammo_table.bullets = inserted_ammo_table
+                        ammo_table.loaded_bullet = guns3d.weighted_randoms(inserted_ammo_table)
+                        state_changed = true
+                        state = next_state
+                        guns3d.data[playername].reload_locked = true
+                    end
+                end
             end
             if def.reload[next_state].state == "unloaded" and not state_changed then
+                minetest.chat_send_all("unloaded")
+
                 --if chambered, then unload
                 if def.reload.type == "magazine" and ammo_table.magazine ~= "" then
                     local mag_stack = ItemStack(ammo_table.magazine)
@@ -171,6 +259,7 @@ function guns3d.reload(active, controls_active, first_call, player, def)
                     inv:add_item("main", mag_stack)
                     ammo_table = {bullets={}, magazine="", loaded_bullet="", total_bullets=0}
                     state = next_state
+                    state_changed = true
                     --kill anims and sounds
                 end
                 if def.reload.type == "flat" or def.reload.type == "fractional" then
@@ -198,11 +287,11 @@ function guns3d.reload(active, controls_active, first_call, player, def)
                     state_changed = true
                 end
             end
-            meta:set_string("ammo", minetest.serialize(ammo_table))
-            meta:set_int("state", state)
-            player:set_wielded_item(held_stack)
-        elseif controls_active then
+            minetest.chat_send_all("end")
         end
+        meta:set_string("ammo", minetest.serialize(ammo_table))
+        meta:set_int("state", state)
+        player:set_wielded_item(held_stack)
         if (not controls_active) and (not active) then
             if guns3d.data[playername].animation_queue[1] and guns3d.data[playername].animation_queue[1].frames and table.compare(guns3d.data[playername].animation_queue[1].frames, anim) then
                 guns3d.end_current_animation(player)
@@ -222,6 +311,7 @@ function guns3d.aim_down_sights(active, controls_active, first_call, player)
     end
 end
 function guns3d.change_fire_mode(active, controls_active, first_call, player, def)
+    local playername = player:get_player_name()
     if active then
         if def.animation_frames.fire_mode then
             local anim = def.animation_frames.fire_mode
@@ -270,10 +360,10 @@ local default_gun_def = {
     hip_spread = 0,
 
     flash_offset = vector.new(),
-
+    clip_size = 1,
     firerate = 0,
     burst_fire = 0,
-    chamber_time = 0,
+    ready_time = 0,
     pellets = 1,
     reload = {
         type = "magazine",
@@ -340,9 +430,9 @@ function guns3d.register_gun(name, def)
         on_use = function(itemstack, player)
             --why
         end,
-        on_drop = function(itemstack, player, pointed_thing)
+        --[[on_drop = function(itemstack, player, pointed_thing)
             player:set_wielded_item(itemstack)
-        end
+        end]]
     })
     --purely visual representation of the gun's pos
     --on its creation .self will IMMEDIATELY have to have a self.parent_player added, failure will cause disfunction
@@ -367,8 +457,6 @@ function guns3d.register_gun(name, def)
             local held = guns3d.data[playername].held
             if obj:get_attach() == nil or name ~= held then
                 obj:remove()
-                guns3d.data[playername].attached_gun = nil
-                return
             elseif name == held then
                 --obj:set_rotation(guns3d.data[playername].visual_offset.rotation)
                 local ads_modifier = vector.new()
@@ -524,6 +612,7 @@ function guns3d.register_bullet(name, def)
     guns3d.bullets[name] = def
 end
 function guns3d.get_gun_def(player, itemstack, name)
+    local playername = player:get_player_name()
     local def
     local ammo_table
     if itemstack then
