@@ -14,7 +14,6 @@ dofile(mp .. "/block_values.lua")
 dofile(mp .. "/function.lua")
 dofile(mp .. "/register.lua")
 dofile(mp .. "/api.lua")
-dofile(mp .. "/guns.lua")
 --[[
 ***WARNING***
 This code may contain graphic content: such as workarounds that make no sense and create paradoxal loops,
@@ -129,10 +128,6 @@ minetest.register_globalstep(function(dtime)
                             }}
                             guns3d.start_animation(animation, player)
                         end
-                    end
-
-                    if minetest.get_modpath("player_api") then
-                        player_api.set_model(player, model_name)
                     end
 
                     if id == "" then
@@ -715,6 +710,9 @@ minetest.register_globalstep(function(dtime)
                 guns3d.data[playername].last_controls = table.copy(player_controls)
                 guns3d.data[playername].attached_gun = gun_obj
                 guns3d.data[playername].attached_reticle = reticle_obj
+                if minetest.get_modpath("player_api") then
+                    player_api.set_model(player, model_name)
+                end
             end
         end
         --check if a gun is not being held anymore, or has been switched

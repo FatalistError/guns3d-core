@@ -404,24 +404,13 @@ local default_bullet_def = {
 }
 function guns3d.register_gun(name, def)
     --sanitize definition
-    print("\n GUNS3d: beginning definition registration checks for gun: "..name.."\n")
     for index, value in pairs(default_gun_def) do
         local initialized
         if not def[index] then
             def[index] = value
-            initialized = true
-        end
-        if initialized then
-            print("     "..index.." = ".. tostring(value))
         end
     end
-    print("\n registration checks \"".. name.. "\" end \n")
-    if def.screen_offset then
-    end
-    --get animation info (this may cause increased startup time/lag)
-    if def.reload_time then
-        --def.controls.reload.timer = def.reload_time
-    end
+    --def = setmetatable(def, {__index=default_gun_def})
     def.name = name
     guns3d.guns[name] = def
     minetest.register_tool(name,{
