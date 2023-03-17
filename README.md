@@ -11,14 +11,13 @@ C: there's remenants of removed features
 D: there's not textures, or any guns excluding one used for testing.
 E: no docs.
 
-This is not a finished mod, and furthermore I expect that you respect that fact, and do not berate me about it.
+This is not a finished mod, and furthermore I expect that you respect that fact, and do not berate me about it on discord.
 
 Here's how to test-
 guns.lua has the testing gun, it should have essentially the entire API (exlcuding what I could have missed)
 It's name is "guns3d:m4a1"
 it takes 50r and 30r mags,
-the 30r mag can use both acacia and regular wood
-it can do this at the samae time
+the 30r mag can use both acacia and regular wood (it tracks the bullet definitions)
 
 for ammo, it's important creative is off.
 
